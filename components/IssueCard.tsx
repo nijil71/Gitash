@@ -37,6 +37,7 @@ export default function IssueCard({ issue, selected, onClick, bookmarked, onTogg
   return (
     <div
       onClick={onClick}
+      data-issue-number={issue.number}
       className={cn(
         "group relative cursor-pointer rounded-lg border p-4 transition-all duration-150",
         "hover:border-border/80 hover:shadow-sm",

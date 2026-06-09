@@ -297,6 +297,63 @@ export default function Home() {
     planRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [selectedIssue]);
 
+  // ── Keyboard navigation ──────────────────────────────────────────────────
+  // Refs hold the latest values so the listener can be mounted once (and stay
+  // before the setup-screen early return, satisfying the rules of hooks).
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const visibleIssuesRef = useRef<GitHubIssue[]>([]);
+  const selectedIssueRef = useRef<GitHubIssue | null>(null);
+  const searchValueRef = useRef("");
+  const repoLoadedRef = useRef(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing =
+        !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
+
+      // "/" focuses the issue search.
+      if (e.key === "/" && !typing && repoLoadedRef.current) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      // Escape clears, then blurs, the search field.
+      if (e.key === "Escape" && document.activeElement === searchInputRef.current) {
+        if (searchValueRef.current) setSearch("");
+        else searchInputRef.current?.blur();
+        return;
+      }
+      // Arrow keys move the selection through the visible issues.
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !typing) {
+        const list = visibleIssuesRef.current;
+        if (!list.length) return;
+        e.preventDefault();
+        const cur = selectedIssueRef.current;
+        const idx = cur ? list.findIndex((i) => i.number === cur.number) : -1;
+        const nextIdx =
+          e.key === "ArrowDown"
+            ? idx < 0
+              ? 0
+              : Math.min(idx + 1, list.length - 1)
+            : idx <= 0
+              ? 0
+              : idx - 1;
+        const issue = list[nextIdx];
+        if (issue) {
+          setSelectedIssue(issue);
+          requestAnimationFrame(() => {
+            document
+              .querySelector(`[data-issue-number="${issue.number}"]`)
+              ?.scrollIntoView({ block: "nearest" });
+          });
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     // Restore GitHub token (independent of AI provider)
     setGithubToken(getStoredGitHubToken());
@@ -500,6 +557,12 @@ export default function Home() {
     ? searched.filter((i) => bookmarkedNumbers.has(i.number))
     : searched;
 
+  // Keep the keyboard-nav refs in sync with the latest render.
+  visibleIssuesRef.current = visibleIssues;
+  selectedIssueRef.current = selectedIssue;
+  searchValueRef.current = search;
+  repoLoadedRef.current = !!repoMeta;
+
   // Main app
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -634,6 +697,7 @@ export default function Home() {
                     sortKey={sortKey}
                     onSortChange={handleSortChange}
                     disabled={loading}
+                    searchInputRef={searchInputRef}
                   />
                 </div>
                 <div className={cn("transition-opacity duration-150", loading && "pointer-events-none opacity-40")}>

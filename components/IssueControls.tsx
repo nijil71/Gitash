@@ -27,6 +27,7 @@ interface Props {
   sortKey: string;
   onSortChange: (key: string) => void;
   disabled?: boolean;
+  searchInputRef?: React.Ref<HTMLInputElement>;
 }
 
 export default function IssueControls({
@@ -35,6 +36,7 @@ export default function IssueControls({
   sortKey,
   onSortChange,
   disabled,
+  searchInputRef,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -54,10 +56,11 @@ export default function IssueControls({
       <div className="relative flex-1">
         <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <Input
+          ref={searchInputRef}
           type="text"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Filter loaded issues…"
+          placeholder="Filter loaded issues…  ( / )"
           disabled={disabled}
           className="h-9 pl-9 pr-8 text-xs bg-secondary/50 placeholder:text-muted-foreground/60"
         />
