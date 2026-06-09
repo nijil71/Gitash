@@ -31,6 +31,7 @@ interface AnalyzeRequestBody {
   issueBody: string;
   labels: string;
   provider: ModelProvider;
+  fileTree?: string[];
 }
 
 const REQUIRED_FIELDS: (keyof AnalyzeRequestBody)[] = [
@@ -71,19 +72,32 @@ const SYSTEM_PROMPT =
   "Always respond with a single valid JSON object — no markdown fences, no extra keys. " +
   'The object must have exactly two string keys: "files" and "plan".';
 
+// Cap the number of paths we inline so the prompt stays well within limits.
+const MAX_TREE_PATHS = 400;
+
 function buildUserPrompt(
   owner: string,
   repo: string,
   issueNumber: number,
   issueTitle: string,
   issueBody: string,
-  labels: string
+  labels: string,
+  fileTree: string[]
 ): string {
+  const treeSection =
+    fileTree.length > 0
+      ? `Repository file tree (filtered to source files):\n` +
+        fileTree.slice(0, MAX_TREE_PATHS).join("\n") +
+        `\n\nWhen listing files, choose ONLY paths that appear in the tree above — ` +
+        `do not invent file names.\n\n`
+      : "";
+
   return (
     `Repo: ${owner}/${repo}\n` +
     `Issue #${issueNumber}: ${issueTitle}\n` +
     `Labels: ${labels}\n` +
-    `Description: ${issueBody.slice(0, 600)}\n\n` +
+    `Description: ${issueBody.slice(0, 1500)}\n\n` +
+    treeSection +
     `Return JSON with:\n` +
     `- "files": bullet list (•) of 4-6 relevant files/dirs, each with a one-line reason\n` +
     `- "plan": numbered 5-step implementation guide written for a junior developer`
@@ -191,7 +205,7 @@ async function handlePost(req: Request): Promise<NextResponse> {
     );
   }
 
-  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider } =
+  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider, fileTree } =
     body as AnalyzeRequestBody;
 
   let modelOption;
@@ -210,7 +224,15 @@ async function handlePost(req: Request): Promise<NextResponse> {
     });
   }
 
-  const userPrompt = buildUserPrompt(owner, repo, issueNumber, issueTitle, issueBody, labels);
+  const userPrompt = buildUserPrompt(
+    owner,
+    repo,
+    issueNumber,
+    issueTitle,
+    issueBody,
+    labels,
+    Array.isArray(fileTree) ? fileTree : []
+  );
 
   // Timeout wrapper
   const controller = new AbortController();

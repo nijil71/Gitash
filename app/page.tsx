@@ -25,8 +25,10 @@ import {
   fetchLabels,
   fetchIssues,
   fetchRepoMeta,
+  fetchRepoTree,
   GitHubAPIError,
   ISSUES_PER_PAGE,
+  type RepoTree,
 } from "@/lib/github";
 import { MODEL_OPTIONS, getModel } from "@/lib/models";
 import type { GitHubIssue, GitHubLabel, ModelOption, ModelProvider } from "@/types";
@@ -38,6 +40,7 @@ interface RepoMeta {
   stars: number;
   language: string;
   description: string;
+  defaultBranch: string;
 }
 
 function toErrorMessage(err: unknown): string {
@@ -239,6 +242,7 @@ export default function Home() {
   const [labels, setLabels] = useState<GitHubLabel[]>([]);
   const [activeLabels, setActiveLabels] = useState<string[]>([]);
   const [issues, setIssues] = useState<GitHubIssue[]>([]);
+  const [fileTree, setFileTree] = useState<RepoTree | null>(null);
   const [selectedIssue, setSelectedIssue] = useState<GitHubIssue | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -330,6 +334,7 @@ export default function Home() {
     setRepoMeta(null);
     setLabels([]);
     setIssues([]);
+    setFileTree(null);
     setSelectedIssue(null);
     setActiveLabels([]);
     setSearch("");
@@ -343,6 +348,12 @@ export default function Home() {
       ]);
       setRepoMeta({ owner, repo, ...meta });
       setLabels(fetchedLabels);
+
+      // Best-effort: ground future AI plans in the repo's actual file tree.
+      // A failure here (e.g. empty repo, rate limit) must not block browsing.
+      fetchRepoTree(owner, repo, meta.defaultBranch, 400, githubToken || undefined)
+        .then(setFileTree)
+        .catch(() => setFileTree(null));
 
       const defaultLabel = fetchedLabels.find((l) =>
         /good.first.issue|beginner|starter/i.test(l.name)
@@ -580,6 +591,7 @@ export default function Home() {
                     apiKey={apiKey}
                     owner={repoMeta.owner}
                     repo={repoMeta.repo}
+                    fileTree={fileTree?.paths ?? []}
                     selectedModel={selectedModel}
                   />
                 ) : selectedIssue && !apiKey ? (

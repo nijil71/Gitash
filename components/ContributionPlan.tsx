@@ -19,6 +19,8 @@ interface Props {
   apiKey: string;
   owner: string;
   repo: string;
+  /** Filtered repo file paths used to ground the AI's file suggestions. */
+  fileTree: string[];
   selectedModel: ModelOption;
   className?: string;
 }
@@ -202,7 +204,7 @@ function StepsTab({ steps }: { steps: StepEntry[] }) {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function ContributionPlan({ issue, apiKey, owner, repo, selectedModel, className }: Props) {
+export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree, selectedModel, className }: Props) {
   const [plan, setPlan] = useState<ContributionPlanData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -227,6 +229,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, selectedM
         issueBody: issue.body ?? "",
         labels: labelNames,
         provider: selectedModel.id,
+        fileTree,
       }),
     })
       .then(async (res) => {

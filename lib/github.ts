@@ -102,7 +102,12 @@ export async function fetchRepoMeta(
   owner: string,
   repo: string,
   githubToken?: string
-): Promise<{ stars: number; language: string; description: string }> {
+): Promise<{
+  stars: number;
+  language: string;
+  description: string;
+  defaultBranch: string;
+}> {
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}`,
     { headers: buildHeaders(githubToken) }
@@ -113,11 +118,64 @@ export async function fetchRepoMeta(
     stargazers_count: number;
     language: string | null;
     description: string | null;
+    default_branch: string;
   } = await res.json();
 
   return {
     stars: data.stargazers_count,
     language: data.language ?? "",
     description: data.description ?? "",
+    defaultBranch: data.default_branch ?? "main",
+  };
+}
+
+// Paths we never want to feed to the model — build output, deps, binaries.
+const IGNORED_PATH =
+  /(^|\/)(node_modules|\.git|\.next|\.turbo|dist|build|out|coverage|vendor|target|\.venv|venv|env|__pycache__|\.idea|\.vscode|bin|obj|\.cache)(\/|$)/i;
+const IGNORED_FILE =
+  /\.(png|jpe?g|gif|svg|ico|webp|avif|bmp|mp4|mov|webm|mp3|wav|woff2?|ttf|eot|otf|map|min\.js|min\.css|snap|pdf|zip|gz|tgz|tar|wasm|lock)$/i;
+const LOCKFILE =
+  /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|Cargo\.lock|poetry\.lock|Gemfile\.lock)$/i;
+
+export interface RepoTree {
+  paths: string[];
+  /** True if GitHub or our own cap dropped some entries. */
+  truncated: boolean;
+}
+
+/**
+ * Fetches the repository's file tree (recursively) and returns a filtered,
+ * size-capped list of source paths suitable for grounding an LLM prompt.
+ */
+export async function fetchRepoTree(
+  owner: string,
+  repo: string,
+  branch: string,
+  maxPaths = 400,
+  githubToken?: string
+): Promise<RepoTree> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(
+      branch
+    )}?recursive=1`,
+    { headers: buildHeaders(githubToken) }
+  );
+  assertOk(res, `fetchRepoTree(${owner}/${repo})`);
+
+  const data: {
+    tree: Array<{ path: string; type: string }>;
+    truncated: boolean;
+  } = await res.json();
+
+  const paths = data.tree
+    .filter((node) => node.type === "blob")
+    .map((node) => node.path)
+    .filter((p) => !IGNORED_PATH.test(p) && !IGNORED_FILE.test(p) && !LOCKFILE.test(p))
+    // Shallower paths first — they're the most orienting for a newcomer.
+    .sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
+
+  return {
+    paths: paths.slice(0, maxPaths),
+    truncated: data.truncated || paths.length > maxPaths,
   };
 }
