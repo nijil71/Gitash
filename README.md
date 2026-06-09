@@ -79,9 +79,9 @@ You can switch providers at any time from the header — each provider's key is 
 | Language | TypeScript 5 |
 | Styling | [Tailwind CSS 3](https://tailwindcss.com) + [shadcn/ui](https://ui.shadcn.com) |
 | Icons | [Lucide React](https://lucide.dev) |
-| AI — Claude | [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-typescript) · `claude-sonnet-4-20250514` |
-| AI — OpenAI | [OpenAI SDK](https://github.com/openai/openai-node) · `gpt-4o` |
-| AI — Gemini | [Google Generative AI SDK](https://github.com/google/generative-ai-js) · `gemini-2.0-flash` |
+| AI — Claude | [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-typescript) · `claude-sonnet-4-6` |
+| AI — OpenAI | [OpenAI SDK](https://github.com/openai/openai-node) · `gpt-5.5` |
+| AI — Gemini | [Google Generative AI SDK](https://github.com/google/generative-ai-js) · `gemini-3.5-flash` |
 | Data | GitHub REST API v3 (unauthenticated, 60 req/hr) |
 | Fonts | Geist Sans / Geist Mono (local, via `next/font`) |
 | Deployment | [Vercel](https://vercel.com) (recommended) |

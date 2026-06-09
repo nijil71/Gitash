@@ -433,9 +433,9 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Right: Contribution plan */}
-              <div>
-                <div className="mb-3">
+              {/* Right: Contribution plan — sticky, viewport-height */}
+              <div className="lg:sticky lg:top-[61px] lg:h-[calc(100vh-80px)] flex flex-col">
+                <div className="mb-3 flex-shrink-0">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Contribution Plan
                   </h2>
@@ -443,6 +443,7 @@ export default function Home() {
 
                 {selectedIssue && apiKey ? (
                   <ContributionPlanPanel
+                    className="flex-1 min-h-0"
                     key={`${repoMeta.owner}/${repoMeta.repo}#${selectedIssue.number}@${selectedModel.id}`}
                     issue={selectedIssue}
                     apiKey={apiKey}
@@ -516,14 +517,6 @@ export default function Home() {
           </div>
         )}
       </main>
-
-      <footer className="border-t border-border px-4 py-3 sm:px-6">
-        <div className="mx-auto max-w-6xl flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            Powered by {selectedModel.name} · Keys stored locally only
-          </p>
-        </div>
-      </footer>
 
       <ApiKeyModal
         isOpen={showApiKeyModal}
