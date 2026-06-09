@@ -13,8 +13,11 @@ interface Props {
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
-  /** True when the empty list is the result of a client-side search filter. */
+  /** True when the empty list is the result of a client-side search/saved filter. */
   filtered?: boolean;
+  /** True when label filters are applied (an empty result came from the server). */
+  hasActiveLabels?: boolean;
+  onClearFilters?: () => void;
   bookmarkedNumbers?: Set<number>;
   onToggleBookmark?: (issue: GitHubIssue) => void;
 }
@@ -27,29 +30,44 @@ export default function IssueList({
   loadingMore,
   onLoadMore,
   filtered,
+  hasActiveLabels,
+  onClearFilters,
   bookmarkedNumbers,
   onToggleBookmark,
 }: Props) {
   if (issues.length === 0) {
+    // Three distinct cases: client-side filter, label filter, or a genuinely
+    // empty issue tracker.
+    const isFilterEmpty = filtered || hasActiveLabels;
+    const title = filtered
+      ? "No issues match your filters"
+      : hasActiveLabels
+        ? "No issues for the selected labels"
+        : "No open issues";
+    const detail = filtered
+      ? "Try a different search term, or clear the filter."
+      : hasActiveLabels
+        ? "No open issues carry all the selected labels."
+        : "This repository has no open issues right now.";
+
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
         <div className="rounded-full bg-secondary p-3">
-          {filtered ? (
+          {isFilterEmpty ? (
             <SearchX className="h-5 w-5 text-muted-foreground" />
           ) : (
             <GitPullRequest className="h-5 w-5 text-muted-foreground" />
           )}
         </div>
         <div>
-          <p className="text-sm font-medium text-foreground">
-            {filtered ? "No issues match your search" : "No open issues found"}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {filtered
-              ? "Try a different search term or clear the filter."
-              : "Try a different label filter or check the repository."}
-          </p>
+          <p className="text-sm font-medium text-foreground">{title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
         </div>
+        {isFilterEmpty && onClearFilters && (
+          <Button variant="outline" size="sm" onClick={onClearFilters} className="h-8 text-xs">
+            Clear filters
+          </Button>
+        )}
       </div>
     );
   }

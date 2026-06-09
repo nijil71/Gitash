@@ -509,6 +509,15 @@ export default function Home() {
     void reloadIssues(activeLabels, key);
   };
 
+  const handleClearFilters = () => {
+    setSearch("");
+    setSavedOnly(false);
+    if (activeLabels.length > 0) {
+      setActiveLabels([]);
+      void reloadIssues([], sortKey);
+    }
+  };
+
   const handleLoadMore = async () => {
     if (!repoMeta || loadingMore) return;
     const nextPage = page + 1;
@@ -709,6 +718,8 @@ export default function Home() {
                     loadingMore={loadingMore}
                     onLoadMore={handleLoadMore}
                     filtered={(Boolean(search) || savedOnly) && issues.length > 0}
+                    hasActiveLabels={activeLabels.length > 0}
+                    onClearFilters={handleClearFilters}
                     bookmarkedNumbers={bookmarkedNumbers}
                     onToggleBookmark={handleToggleBookmark}
                   />
