@@ -76,7 +76,7 @@ export default function ApiKeyModal({ isOpen, onClose, onSave, selectedModel }: 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md grayscale">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-1">
             <div

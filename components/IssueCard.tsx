@@ -68,7 +68,7 @@ export default function IssueCard({ issue, selected, onClick, bookmarked, onTogg
             )}
             {issue.assignees && issue.assignees.length > 0 && (
               <span
-                className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-amber-500"
+                className="inline-flex items-center gap-1 rounded-full bg-foreground/10 px-1.5 py-0.5 text-foreground/80"
                 title={`Assigned to ${issue.assignees.map((a) => a.login).join(", ")} — someone may already be working on this`}
               >
                 <UserCheck className="h-3 w-3" />
@@ -105,7 +105,7 @@ export default function IssueCard({ issue, selected, onClick, bookmarked, onTogg
               {issue.labels.map((label) => (
                 <span
                   key={label.id}
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium grayscale"
                   style={{
                     backgroundColor: `#${label.color}1a`,
                     color: `#${label.color}`,
@@ -129,14 +129,14 @@ export default function IssueCard({ issue, selected, onClick, bookmarked, onTogg
               className={cn(
                 "transition-colors cursor-pointer",
                 bookmarked
-                  ? "text-amber-500"
+                  ? "text-foreground"
                   : "text-muted-foreground/40 hover:text-muted-foreground"
               )}
               aria-label={bookmarked ? "Remove bookmark" : "Bookmark issue"}
               aria-pressed={bookmarked}
               title={bookmarked ? "Remove bookmark" : "Bookmark issue"}
             >
-              <Bookmark className={cn("h-3.5 w-3.5", bookmarked && "fill-amber-500")} />
+              <Bookmark className={cn("h-3.5 w-3.5", bookmarked && "fill-foreground")} />
             </button>
           )}
           <a

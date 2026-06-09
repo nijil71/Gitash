@@ -97,7 +97,7 @@ function ProviderCard({
     <button
       onClick={() => onSelect(option.id)}
       className={cn(
-        "group relative flex flex-col items-start gap-4 rounded-2xl border border-border",
+        "group relative flex flex-col items-start gap-4 rounded-2xl border border-border grayscale",
         "bg-card p-6 text-left transition-all duration-200 cursor-pointer w-full",
         "hover:border-[var(--accent-color)] hover:shadow-lg hover:shadow-black/20",
         "hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -648,8 +648,8 @@ export default function Home() {
                   {repoMeta.owner}/{repoMeta.repo}
                   <ExternalLink className="h-3 w-3" />
                 </a>
-                <div className="flex items-center gap-1 text-xs text-amber-400">
-                  <Star className="h-3 w-3 fill-amber-400" />
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Star className="h-3 w-3 fill-muted-foreground" />
                   {repoMeta.stars.toLocaleString()}
                 </div>
                 {repoMeta.language && (
@@ -684,11 +684,11 @@ export default function Home() {
                         className={cn(
                           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors cursor-pointer",
                           savedOnly
-                            ? "bg-amber-400/15 text-amber-500 ring-1 ring-amber-400/40"
+                            ? "bg-foreground/10 text-foreground ring-1 ring-border"
                             : "bg-secondary text-muted-foreground hover:text-foreground"
                         )}
                       >
-                        <Bookmark className={cn("h-3 w-3", savedOnly && "fill-amber-500")} />
+                        <Bookmark className={cn("h-3 w-3", savedOnly && "fill-foreground")} />
                         Saved {bookmarkedNumbers.size}
                       </button>
                     )}
@@ -765,7 +765,7 @@ export default function Home() {
                       size="sm"
                       onClick={() => setShowApiKeyModal(true)}
                       style={{ backgroundColor: selectedModel.color }}
-                      className="hover:opacity-90 transition-opacity text-white"
+                      className="hover:opacity-90 transition-opacity text-white grayscale"
                     >
                       <KeyRound className="h-3.5 w-3.5" />
                       Set API Key
@@ -823,7 +823,7 @@ export default function Home() {
             {bookmarks.length > 0 && (
               <div className="w-full max-w-sm">
                 <p className="mb-2 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                  <Bookmark className="h-3 w-3 fill-amber-500 text-amber-500" />
+                  <Bookmark className="h-3 w-3 fill-foreground text-foreground" />
                   Saved issues
                 </p>
                 <div className="flex flex-col gap-1.5">
@@ -834,7 +834,7 @@ export default function Home() {
                       title={`Open ${b.owner}/${b.repo}`}
                       className="group flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-secondary/40 cursor-pointer"
                     >
-                      <Bookmark className="h-3 w-3 flex-shrink-0 fill-amber-500 text-amber-500" />
+                      <Bookmark className="h-3 w-3 flex-shrink-0 fill-foreground text-foreground" />
                       <span className="min-w-0 flex-1 truncate text-xs text-foreground/90">
                         {b.title}
                       </span>

@@ -17,7 +17,7 @@ function ProviderLogo({ option, size }: { option: ModelOption; size: number }) {
   if (error) {
     return (
       <div
-        className="flex flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+        className="flex flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white grayscale"
         style={{ width: size, height: size, backgroundColor: option.color }}
       >
         {option.name[0]}
@@ -31,7 +31,7 @@ function ProviderLogo({ option, size }: { option: ModelOption; size: number }) {
       alt={option.description}
       width={size}
       height={size}
-      className="flex-shrink-0 object-contain"
+      className="flex-shrink-0 object-contain grayscale"
       onError={() => setError(true)}
     />
   );

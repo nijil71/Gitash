@@ -37,7 +37,7 @@ export default function LabelFilter({ labels, activeLabels, onToggle }: Props) {
             onClick={() => onToggle(label.name)}
             aria-pressed={isActive}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-150 cursor-pointer border",
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-150 cursor-pointer border grayscale",
               isActive
                 ? "shadow-sm"
                 : "bg-secondary/60 border-transparent text-secondary-foreground hover:bg-secondary"

@@ -18,12 +18,12 @@ export function GitashIcon({ size = 32, className, withBackground = true }: Gita
     >
       <defs>
         <linearGradient id="gitash-bg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#1e293b" />
-          <stop offset="100%" stopColor="#0b1220" />
+          <stop offset="0%" stopColor="#27272a" />
+          <stop offset="100%" stopColor="#18181b" />
         </linearGradient>
         <radialGradient id="gitash-glow" cx="50%" cy="45%" r="55%">
-          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.14" />
-          <stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
         </radialGradient>
       </defs>
 
@@ -38,7 +38,7 @@ export function GitashIcon({ size = 32, className, withBackground = true }: Gita
       {/* G letterform traced as a git-graph circuit */}
       <path
         d="M24,7 L8,7 L8,25 L24,25 L24,16 L15,16"
-        stroke="#22c55e"
+        stroke="#e4e4e7"
         strokeWidth="2.2"
         fill="none"
         strokeLinecap="round"
@@ -48,17 +48,17 @@ export function GitashIcon({ size = 32, className, withBackground = true }: Gita
       {/* Feature branch diverging from the bar terminus */}
       <line
         x1="15" y1="16" x2="22" y2="9"
-        stroke="#4ade80"
+        stroke="#a1a1aa"
         strokeWidth="1.6"
         strokeLinecap="round"
-        opacity="0.5"
+        opacity="0.6"
       />
 
       {/* Commit nodes */}
-      <circle cx="24" cy="7"  r="2.4" fill="#22c55e" />
-      <circle cx="8"  cy="25" r="2.4" fill="#22c55e" />
-      <circle cx="15" cy="16" r="2.0" fill="#4ade80" />
-      <circle cx="22" cy="9"  r="1.6" fill="#4ade80" opacity="0.65" />
+      <circle cx="24" cy="7"  r="2.4" fill="#e4e4e7" />
+      <circle cx="8"  cy="25" r="2.4" fill="#e4e4e7" />
+      <circle cx="15" cy="16" r="2.0" fill="#a1a1aa" />
+      <circle cx="22" cy="9"  r="1.6" fill="#a1a1aa" opacity="0.7" />
     </svg>
   );
 }

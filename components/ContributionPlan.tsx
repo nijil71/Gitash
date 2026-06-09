@@ -72,7 +72,7 @@ function ModelBadge({ model }: { model: ModelOption }) {
   const [imgError, setImgError] = useState(false);
   return (
     <span
-      className="inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      className="inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium grayscale"
       style={{
         borderColor: `${model.color}44`,
         color: model.color,
@@ -205,7 +205,7 @@ function FilesTab({ files }: { files: FileEntry[] }) {
             className={cn("flex items-start gap-3 px-4 py-3", i < files.length - 1 && "border-b border-border/60")}
           >
             <div
-              className="mt-0.5 flex-shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none"
+              className="mt-0.5 flex-shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none grayscale"
               style={{ backgroundColor: `${color}18`, color }}
             >
               {ext || "dir"}
@@ -288,7 +288,7 @@ function DifficultyBadge({ difficulty }: { difficulty: PlanDifficulty }) {
   const { color, label } = DIFFICULTY_STYLE[difficulty];
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium grayscale"
       style={{ borderColor: `${color}44`, color, backgroundColor: `${color}15` }}
     >
       <Gauge className="h-3 w-3" />
@@ -536,7 +536,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
 
       {/* ── Tab bar (only when plan is loaded) ── */}
       {plan && !loading && (
-        <div className="flex items-center gap-1 px-4 pt-3 pb-0 border-b border-border flex-shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-1 px-4 pt-3 pb-0 border-b border-border flex-shrink-0">
           {tabs.map((tab) => {
             const isActive = activeTab === tab;
             const { label, icon: Icon } = TAB_META[tab];
@@ -597,16 +597,16 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
                         <BookOpen className="h-3.5 w-3.5" />
                         Before you start
                       </div>
-                      <BulletList items={prerequisites} accent="#64748b" />
+                      <BulletList items={prerequisites} accent="hsl(var(--muted-foreground))" />
                     </div>
                   )}
                   {steps.length === 0 && streaming ? <StreamingPlaceholder /> : <StepsTab steps={steps} />}
                 </div>
               )}
 
-              {activeTab === "testing" && <BulletList items={testing} accent="#22c55e" />}
+              {activeTab === "testing" && <BulletList items={testing} accent="hsl(var(--muted-foreground))" />}
 
-              {activeTab === "gotchas" && <BulletList items={gotchas} accent="#f59e0b" />}
+              {activeTab === "gotchas" && <BulletList items={gotchas} accent="hsl(var(--foreground))" />}
             </div>
           )}
         </div>

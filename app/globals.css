@@ -4,55 +4,55 @@
 
 @layer base {
   :root {
-    /* Light mode — clean, high-contrast */
-    --background: 0 0% 98%;
-    --foreground: 222 47% 8%;
+    /* Light mode — pure monochrome */
+    --background: 0 0% 99%;
+    --foreground: 0 0% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 8%;
+    --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 8%;
-    --primary: 142 72% 38%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 215 20% 93%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 215 20% 93%;
-    --muted-foreground: 215 16% 42%;
-    --accent: 215 20% 93%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 58%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 214 20% 88%;
-    --input: 214 20% 88%;
-    --ring: 142 72% 38%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 0 0% 12%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 94%;
+    --secondary-foreground: 0 0% 12%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 94%;
+    --accent-foreground: 0 0% 12%;
+    --destructive: 0 0% 32%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 0 0% 45%;
     --radius: 0.625rem;
-    --chart-1: 142 72% 38%;
-    --chart-2: 221 83% 53%;
-    --chart-3: 262 83% 58%;
-    --chart-4: 38 92% 50%;
-    --chart-5: 0 84% 58%;
+    --chart-1: 0 0% 20%;
+    --chart-2: 0 0% 35%;
+    --chart-3: 0 0% 50%;
+    --chart-4: 0 0% 65%;
+    --chart-5: 0 0% 80%;
   }
 
   .dark {
-    /* Dark mode — deep slate, developer-tool aesthetic */
-    --background: 222 47% 5%;
-    --foreground: 210 40% 96%;
-    --card: 217 33% 10%;
-    --card-foreground: 210 40% 96%;
-    --popover: 217 33% 10%;
-    --popover-foreground: 210 40% 96%;
-    --primary: 142 72% 45%;
-    --primary-foreground: 222 47% 5%;
-    --secondary: 217 24% 16%;
-    --secondary-foreground: 210 40% 96%;
-    --muted: 217 24% 16%;
-    --muted-foreground: 215 20% 58%;
-    --accent: 217 24% 16%;
-    --accent-foreground: 210 40% 96%;
-    --destructive: 0 62% 40%;
-    --destructive-foreground: 210 40% 96%;
-    --border: 217 24% 18%;
-    --input: 217 24% 18%;
-    --ring: 142 72% 45%;
+    /* Dark mode — pure monochrome */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 92%;
+    --primary-foreground: 0 0% 8%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 0% 70%;
+    --destructive-foreground: 0 0% 8%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 0 0% 70%;
     --radius: 0.625rem;
   }
 }
@@ -65,11 +65,10 @@
   body {
     @apply text-foreground font-sans antialiased;
     background-color: hsl(var(--background));
-    /* Monochrome gradient — a soft neutral glow from the top fading into the
-       base background. Uses the grayscale tokens so it adapts to both themes. */
+    /* Fully monochrome gradient built from the grayscale tokens. */
     background-image:
-      radial-gradient(110% 70% at 50% -10%, hsl(var(--muted) / 0.6) 0%, transparent 55%),
-      linear-gradient(180deg, hsl(var(--secondary) / 0.35) 0%, transparent 30%);
+      radial-gradient(120% 80% at 50% -10%, hsl(var(--secondary)) 0%, transparent 55%),
+      linear-gradient(180deg, transparent 50%, hsl(var(--muted) / 0.5) 100%);
     background-attachment: fixed;
     background-repeat: no-repeat;
   }
