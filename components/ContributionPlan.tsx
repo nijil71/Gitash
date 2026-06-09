@@ -7,6 +7,7 @@ import type {
   GitHubIssue,
   ModelOption,
 } from "@/types";
+import { fetchIssueComments } from "@/lib/github";
 import LoadingSkeleton from "./LoadingSkeleton";
 import CopyButton from "./CopyButton";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,8 @@ interface Props {
   repo: string;
   /** Filtered repo file paths used to ground the AI's file suggestions. */
   fileTree: string[];
+  /** Optional GitHub token, used to fetch issue comments for extra context. */
+  githubToken: string;
   selectedModel: ModelOption;
   className?: string;
 }
@@ -204,7 +207,7 @@ function StepsTab({ steps }: { steps: StepEntry[] }) {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree, selectedModel, className }: Props) {
+export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree, githubToken, selectedModel, className }: Props) {
   const [plan, setPlan] = useState<ContributionPlanData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -219,28 +222,48 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
 
     const labelNames = issue.labels.map((l) => l.name).join(", ") || "none";
 
-    fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify({
-        owner, repo,
-        issueNumber: issue.number,
-        issueTitle: issue.title,
-        issueBody: issue.body ?? "",
-        labels: labelNames,
-        provider: selectedModel.id,
-        fileTree,
-      }),
-    })
-      .then(async (res) => {
-        const ct = res.headers.get("content-type") ?? "";
-        if (!ct.includes("application/json"))
-          throw new Error(`Server error (${res.status}) — please try again`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
-        return data as ContributionPlanData;
-      })
-      .then((data) => { if (!cancelled) setPlan(data); })
+    (async () => {
+      // Best-effort: pull the issue discussion for extra context. Never block
+      // the plan if comments can't be fetched (rate limit, locked issue, etc.).
+      let comments: { author: string; body: string }[] = [];
+      if (issue.comments > 0) {
+        try {
+          comments = await fetchIssueComments(
+            owner,
+            repo,
+            issue.number,
+            20,
+            githubToken || undefined
+          );
+        } catch {
+          comments = [];
+        }
+      }
+      if (cancelled) return;
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+        body: JSON.stringify({
+          owner, repo,
+          issueNumber: issue.number,
+          issueTitle: issue.title,
+          issueBody: issue.body ?? "",
+          labels: labelNames,
+          provider: selectedModel.id,
+          fileTree,
+          comments,
+        }),
+      });
+
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json"))
+        throw new Error(`Server error (${res.status}) — please try again`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
+      return data as ContributionPlanData;
+    })()
+      .then((data) => { if (!cancelled && data) setPlan(data); })
       .catch((err: unknown) => {
         if (!cancelled)
           setError(err instanceof Error ? err.message : "Something went wrong");

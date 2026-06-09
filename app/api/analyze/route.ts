@@ -32,6 +32,7 @@ interface AnalyzeRequestBody {
   labels: string;
   provider: ModelProvider;
   fileTree?: string[];
+  comments?: { author: string; body: string }[];
 }
 
 const REQUIRED_FIELDS: (keyof AnalyzeRequestBody)[] = [
@@ -72,8 +73,10 @@ const SYSTEM_PROMPT =
   "Always respond with a single valid JSON object — no markdown fences, no extra keys. " +
   'The object must have exactly two string keys: "files" and "plan".';
 
-// Cap the number of paths we inline so the prompt stays well within limits.
+// Caps to keep the prompt well within model context limits.
 const MAX_TREE_PATHS = 400;
+const MAX_COMMENTS = 8;
+const MAX_COMMENT_CHARS = 400;
 
 function buildUserPrompt(
   owner: string,
@@ -82,7 +85,8 @@ function buildUserPrompt(
   issueTitle: string,
   issueBody: string,
   labels: string,
-  fileTree: string[]
+  fileTree: string[],
+  comments: { author: string; body: string }[]
 ): string {
   const treeSection =
     fileTree.length > 0
@@ -92,11 +96,22 @@ function buildUserPrompt(
         `do not invent file names.\n\n`
       : "";
 
+  const commentsSection =
+    comments.length > 0
+      ? `Issue discussion (most recent maintainers/contributors may have proposed a fix):\n` +
+        comments
+          .slice(0, MAX_COMMENTS)
+          .map((c) => `@${c.author}: ${c.body.slice(0, MAX_COMMENT_CHARS)}`)
+          .join("\n---\n") +
+        `\n\n`
+      : "";
+
   return (
     `Repo: ${owner}/${repo}\n` +
     `Issue #${issueNumber}: ${issueTitle}\n` +
     `Labels: ${labels}\n` +
     `Description: ${issueBody.slice(0, 1500)}\n\n` +
+    commentsSection +
     treeSection +
     `Return JSON with:\n` +
     `- "files": bullet list (•) of 4-6 relevant files/dirs, each with a one-line reason\n` +
@@ -205,7 +220,7 @@ async function handlePost(req: Request): Promise<NextResponse> {
     );
   }
 
-  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider, fileTree } =
+  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider, fileTree, comments } =
     body as AnalyzeRequestBody;
 
   let modelOption;
@@ -231,7 +246,8 @@ async function handlePost(req: Request): Promise<NextResponse> {
     issueTitle,
     issueBody,
     labels,
-    Array.isArray(fileTree) ? fileTree : []
+    Array.isArray(fileTree) ? fileTree : [],
+    Array.isArray(comments) ? comments : []
   );
 
   // Timeout wrapper

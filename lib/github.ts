@@ -98,6 +98,35 @@ export async function fetchIssues(
   return items.filter((item) => !item.pull_request);
 }
 
+export interface IssueComment {
+  author: string;
+  body: string;
+}
+
+/**
+ * Fetches the discussion on an issue — often where the real fix is worked out.
+ * Returns up to `perPage` non-empty comments, oldest first.
+ */
+export async function fetchIssueComments(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  perPage = 20,
+  githubToken?: string
+): Promise<IssueComment[]> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=${perPage}`,
+    { headers: buildHeaders(githubToken) }
+  );
+  assertOk(res, `fetchIssueComments(${owner}/${repo}#${issueNumber})`);
+
+  const data: Array<{ user: { login: string } | null; body: string | null }> =
+    await res.json();
+  return data
+    .map((c) => ({ author: c.user?.login ?? "unknown", body: (c.body ?? "").trim() }))
+    .filter((c) => c.body);
+}
+
 export async function fetchRepoMeta(
   owner: string,
   repo: string,

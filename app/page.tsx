@@ -592,6 +592,7 @@ export default function Home() {
                     owner={repoMeta.owner}
                     repo={repoMeta.repo}
                     fileTree={fileTree?.paths ?? []}
+                    githubToken={githubToken}
                     selectedModel={selectedModel}
                   />
                 ) : selectedIssue && !apiKey ? (
