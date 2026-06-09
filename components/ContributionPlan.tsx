@@ -16,6 +16,7 @@ import {
   FlaskConical,
   TriangleAlert,
   RefreshCw,
+  Download,
 } from "lucide-react";
 import type {
   ContributionPlan as ContributionPlanData,
@@ -418,6 +419,18 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     setReloadToken((t) => t + 1);
   };
 
+  const handleDownload = () => {
+    const blob = new Blob([markdownText], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${owner}-${repo}-issue-${issue.number}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const branchName = suggestBranchName(issue);
   const forkUrl = `https://github.com/${owner}/${repo}/fork`;
   const editorUrl = `https://github.dev/${owner}/${repo}/tree/${defaultBranch}`;
@@ -504,6 +517,18 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
               className="h-8 w-8 p-0"
             >
               <RefreshCw className={cn("h-3.5 w-3.5", streaming && "animate-spin")} />
+            </Button>
+          )}
+          {plan && !loading && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownload}
+              aria-label="Download plan as Markdown"
+              title="Download as Markdown"
+              className="h-8 w-8 p-0"
+            >
+              <Download className="h-3.5 w-3.5" />
             </Button>
           )}
           {plan && <CopyButton text={markdownText} label="Copy plan" />}
