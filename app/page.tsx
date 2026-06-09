@@ -8,9 +8,11 @@ import {
   Sparkles,
   ArrowRight,
   ExternalLink,
+  GitBranch,
 } from "lucide-react";
 import { GitashIcon } from "@/components/GitashIcon";
 import ApiKeyModal, { getStoredKey } from "@/components/ApiKeyModal";
+import GitHubTokenModal, { getStoredGitHubToken } from "@/components/GitHubTokenModal";
 import ModelSelector from "@/components/ModelSelector";
 import RepoInput from "@/components/RepoInput";
 import LabelFilter from "@/components/LabelFilter";
@@ -203,6 +205,8 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState<ModelOption>(MODEL_OPTIONS[0]);
   const [apiKey, setApiKey] = useState("");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [githubToken, setGithubToken] = useState("");
+  const [showTokenModal, setShowTokenModal] = useState(false);
   const [skippedSetup, setSkippedSetup] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -215,6 +219,9 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Restore GitHub token (independent of AI provider)
+    setGithubToken(getStoredGitHubToken());
+
     // Restore last provider + key
     const lastProvider = localStorage.getItem("last_provider") as ModelProvider | null;
     if (lastProvider) {
@@ -277,8 +284,8 @@ export default function Home() {
 
     try {
       const [meta, fetchedLabels] = await Promise.all([
-        fetchRepoMeta(owner, repo),
-        fetchLabels(owner, repo),
+        fetchRepoMeta(owner, repo, githubToken || undefined),
+        fetchLabels(owner, repo, githubToken || undefined),
       ]);
       setRepoMeta({ owner, repo, ...meta });
       setLabels(fetchedLabels);
@@ -289,7 +296,12 @@ export default function Home() {
         "";
       setActiveLabel(defaultLabel);
 
-      const initialIssues = await fetchIssues(owner, repo, defaultLabel || undefined);
+      const initialIssues = await fetchIssues(
+        owner,
+        repo,
+        defaultLabel || undefined,
+        githubToken || undefined
+      );
       setIssues(initialIssues);
     } catch (err) {
       setError(toErrorMessage(err));
@@ -305,7 +317,12 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
-      const filtered = await fetchIssues(repoMeta.owner, repoMeta.repo, label || undefined);
+      const filtered = await fetchIssues(
+        repoMeta.owner,
+        repoMeta.repo,
+        label || undefined,
+        githubToken || undefined
+      );
       setIssues(filtered);
     } catch (err) {
       setError(toErrorMessage(err));
@@ -350,6 +367,19 @@ export default function Home() {
 
           <div className="flex items-center gap-2">
             <ModelSelector selected={selectedModel.id} onChange={handleModelChange} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTokenModal(true)}
+              title={githubToken ? "GitHub token saved (5,000 req/hr)" : "Add a GitHub token to raise the rate limit"}
+              className={cn(
+                "h-8 gap-1.5 text-xs",
+                githubToken && "text-primary border-primary/40 bg-primary/5"
+              )}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{githubToken ? "Token saved" : "GitHub token"}</span>
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -523,6 +553,12 @@ export default function Home() {
         onClose={() => setShowApiKeyModal(false)}
         onSave={handleApiKeySave}
         selectedModel={selectedModel}
+      />
+
+      <GitHubTokenModal
+        isOpen={showTokenModal}
+        onClose={() => setShowTokenModal(false)}
+        onSave={setGithubToken}
       />
     </div>
   );

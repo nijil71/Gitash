@@ -132,7 +132,7 @@ No environment variables required — users supply their own API keys in-app.
 
 ## GitHub API rate limits
 
-Unauthenticated GitHub API requests are limited to **60 per hour** per IP. If you hit the limit, wait a minute and try again. To raise the limit to 5,000/hr, you can add a `GITHUB_TOKEN` environment variable and pass it as a `Authorization: Bearer` header in [`lib/github.ts`](lib/github.ts).
+Unauthenticated GitHub API requests are limited to **60 per hour** per IP. To raise the limit to **5,000/hr** (and access private repos), click **GitHub token** in the header and paste a [personal access token](https://github.com/settings/tokens/new?description=Gitash&scopes=public_repo). Like your AI key, it's stored only in your browser (`localStorage`) and sent directly to GitHub — never to our server.
 
 ---
 
