@@ -56,3 +56,8 @@ next-env.d.ts
 # os
 .DS_Store
 desktop.ini
+
+# local AI tooling (Claude Code skills/config — not part of the project)
+.claude/
+*.pyc
+__pycache__/
