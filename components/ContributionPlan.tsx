@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ExternalLink, Bot, FileCode2, ListChecks } from "lucide-react";
+import {
+  ExternalLink,
+  Bot,
+  FileCode2,
+  ListChecks,
+  GitFork,
+  GitPullRequestCreate,
+  Code2,
+  GitBranch,
+} from "lucide-react";
 import type {
   ContributionPlan as ContributionPlanData,
   GitHubIssue,
@@ -24,8 +33,28 @@ interface Props {
   fileTree: string[];
   /** Optional GitHub token, used to fetch issue comments for extra context. */
   githubToken: string;
+  /** Repo default branch, used for the web-editor link. */
+  defaultBranch: string;
   selectedModel: ModelOption;
   className?: string;
+}
+
+// Suggest a conventional branch name from the issue's labels + title.
+function suggestBranchName(issue: GitHubIssue): string {
+  const labels = issue.labels.map((l) => l.name.toLowerCase());
+  let prefix = "fix";
+  if (labels.some((l) => /feature|enhancement|feat/.test(l))) prefix = "feat";
+  else if (labels.some((l) => /doc/.test(l))) prefix = "docs";
+  else if (labels.some((l) => /chore|refactor|maintenance/.test(l))) prefix = "chore";
+
+  const slug = issue.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+
+  return `${prefix}/${issue.number}${slug ? `-${slug}` : ""}`;
 }
 
 // ── Model badge ────────────────────────────────────────────────────────────
@@ -207,7 +236,7 @@ function StepsTab({ steps }: { steps: StepEntry[] }) {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree, githubToken, selectedModel, className }: Props) {
+export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree, githubToken, defaultBranch, selectedModel, className }: Props) {
   const [plan, setPlan] = useState<ContributionPlanData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -274,8 +303,17 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issue.number, owner, repo, apiKey, selectedModel.id]);
 
+  const branchName = suggestBranchName(issue);
+  const forkUrl = `https://github.com/${owner}/${repo}/fork`;
+  const editorUrl = `https://github.dev/${owner}/${repo}/tree/${defaultBranch}`;
+  const compareUrl = `https://github.com/${owner}/${repo}/compare`;
+
   const markdownText = plan
-    ? `## Issue #${issue.number}: ${issue.title}\n\n### Relevant Files\n${plan.files}\n\n### Implementation Plan\n${plan.plan}`
+    ? `## Issue #${issue.number}: ${issue.title}\n\n` +
+      `**Suggested branch:** \`${branchName}\`\n\n` +
+      `### Relevant Files\n${plan.files}\n\n` +
+      `### Implementation Plan\n${plan.plan}\n\n` +
+      `[Open issue](${issue.html_url}) · [Fork repo](${forkUrl}) · [Open a PR](${compareUrl})`
     : "";
 
   const files = plan ? parseFiles(plan.files) : [];
@@ -361,6 +399,47 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           )}
         </div>
       </ScrollArea>
+
+      {/* ── Action footer ── */}
+      {plan && !loading && (
+        <div className="flex-shrink-0 border-t border-border bg-secondary/20 px-4 py-3 space-y-2.5">
+          {/* Suggested branch */}
+          <div className="flex items-center gap-2">
+            <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+            <code className="min-w-0 flex-1 truncate rounded bg-secondary px-2 py-1 font-mono text-[11px] text-foreground/80">
+              {branchName}
+            </code>
+            <CopyButton text={branchName} label="Copy" className="h-7" />
+          </div>
+
+          {/* Quick actions */}
+          <div className="grid grid-cols-3 gap-1.5">
+            <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+              <a href={forkUrl} target="_blank" rel="noopener noreferrer">
+                <GitFork className="h-3.5 w-3.5" />
+                Fork
+              </a>
+            </Button>
+            <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+              <a
+                href={editorUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open this repo in the github.dev web editor"
+              >
+                <Code2 className="h-3.5 w-3.5" />
+                Editor
+              </a>
+            </Button>
+            <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+              <a href={compareUrl} target="_blank" rel="noopener noreferrer">
+                <GitPullRequestCreate className="h-3.5 w-3.5" />
+                Open PR
+              </a>
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

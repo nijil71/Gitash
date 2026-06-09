@@ -593,6 +593,7 @@ export default function Home() {
                     repo={repoMeta.repo}
                     fileTree={fileTree?.paths ?? []}
                     githubToken={githubToken}
+                    defaultBranch={repoMeta.defaultBranch}
                     selectedModel={selectedModel}
                   />
                 ) : selectedIssue && !apiKey ? (

@@ -13,11 +13,13 @@
 ## What it does
 
 - **Browse any public GitHub repo** — paste a full URL or `owner/repo` shorthand
-- **Filter by label** — auto-selects `good first issue` and similar beginner-friendly labels
+- **Filter, search & sort** — combine multiple labels, search loaded issues, sort by newest / recently updated / most commented, and page through results
 - **Pick your AI** — choose between Claude (Anthropic), GPT-4o (OpenAI), or Gemini 2.0 Flash (Google)
-- **Contribution plan** — click an issue and get a tailored plan: relevant files + a numbered step-by-step guide
+- **Context-grounded plans** — the AI sees the repo's real file tree and the issue discussion, so file suggestions point at files that actually exist
+- **Actionable output** — every plan suggests a branch name and one-click Fork / web-editor / Open-PR links
 - **Copy-ready Markdown** — export the full plan in one click
-- **Privacy-first** — API keys live only in your browser (`localStorage`), sent directly to the provider, never through our server
+- **Higher rate limits** — add a GitHub token in-app to go from 60 to 5,000 req/hr (and reach private repos)
+- **Privacy-first** — your AI key and GitHub token live only in your browser (`localStorage`), sent directly to the provider, never through our server
 
 ---
 
@@ -26,11 +28,13 @@
 ```
 1. User picks an AI provider and saves their API key (stored in localStorage)
 2. Paste a GitHub repo URL → fetches repo meta + labels via GitHub REST API
-3. Select a label filter → fetches matching open issues
+3. Select label filter(s) → fetches matching open issues (search/sort/paginate client-side + via the API)
 4. Click an issue → POST /api/analyze
         ├── x-api-key header  (your key, direct to provider)
         ├── provider: "claude" | "openai" | "gemini"
-        └── issue context (title, body, labels, repo)
+        ├── issue context (title, body, labels, repo)
+        ├── fileTree (filtered list of the repo's real source paths)
+        └── comments (the issue discussion, fetched from GitHub)
                 └── AI returns { files, plan } as JSON
                         └── Rendered in the contribution panel
 ```
