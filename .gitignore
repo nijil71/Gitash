@@ -59,5 +59,6 @@ desktop.ini
 
 # local AI tooling (Claude Code skills/config — not part of the project)
 .claude/
+CLAUDE.md
 *.pyc
 __pycache__/
