@@ -10,11 +10,17 @@ import {
   GitPullRequestCreate,
   Code2,
   GitBranch,
+  Clock,
+  Gauge,
+  BookOpen,
+  FlaskConical,
+  TriangleAlert,
 } from "lucide-react";
 import type {
   ContributionPlan as ContributionPlanData,
   GitHubIssue,
   ModelOption,
+  PlanDifficulty,
 } from "@/types";
 import { fetchIssueComments } from "@/lib/github";
 import LoadingSkeleton from "./LoadingSkeleton";
@@ -154,6 +160,13 @@ function parseSteps(raw: string): StepEntry[] {
   return steps;
 }
 
+function parseBullets(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((l) => l.replace(/^[•\-\*\d+\.\)]\s*/, "").trim())
+    .filter(Boolean);
+}
+
 const PATH_RE = /((?:[\w.-]+\/)+[\w.\-]+\.\w+|\b\w+\.(?:ts|tsx|js|jsx|css|scss|go|rs|py|md|json)\b)/g;
 
 function highlightPaths(text: string): ReactNode[] {
@@ -234,13 +247,60 @@ function StepsTab({ steps }: { steps: StepEntry[] }) {
   );
 }
 
+function BulletList({ items, accent }: { items: string[]; accent: string }) {
+  if (items.length === 0)
+    return <p className="text-xs text-muted-foreground text-center py-8">Nothing listed</p>;
+  return (
+    <ul className="space-y-2.5">
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2.5 text-sm text-foreground/90 leading-relaxed">
+          <span
+            className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full"
+            style={{ backgroundColor: accent }}
+          />
+          <span className="min-w-0">{highlightPaths(item)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const DIFFICULTY_STYLE: Record<Exclude<PlanDifficulty, "">, { color: string; label: string }> = {
+  beginner: { color: "#22c55e", label: "Beginner" },
+  intermediate: { color: "#f59e0b", label: "Intermediate" },
+  advanced: { color: "#ef4444", label: "Advanced" },
+};
+
+function DifficultyBadge({ difficulty }: { difficulty: PlanDifficulty }) {
+  if (!difficulty) return null;
+  const { color, label } = DIFFICULTY_STYLE[difficulty];
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      style={{ borderColor: `${color}44`, color, backgroundColor: `${color}15` }}
+    >
+      <Gauge className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
+
+type TabKey = "files" | "steps" | "testing" | "gotchas";
+
+const TAB_META: Record<TabKey, { label: string; icon: typeof FileCode2 }> = {
+  files: { label: "Files", icon: FileCode2 },
+  steps: { label: "Steps", icon: ListChecks },
+  testing: { label: "Testing", icon: FlaskConical },
+  gotchas: { label: "Gotchas", icon: TriangleAlert },
+};
 
 export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree, githubToken, defaultBranch, selectedModel, className }: Props) {
   const [plan, setPlan] = useState<ContributionPlanData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"files" | "steps">("files");
+  const [activeTab, setActiveTab] = useState<TabKey>("files");
 
   useEffect(() => {
     let cancelled = false;
@@ -308,16 +368,36 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   const editorUrl = `https://github.dev/${owner}/${repo}/tree/${defaultBranch}`;
   const compareUrl = `https://github.com/${owner}/${repo}/compare`;
 
-  const markdownText = plan
-    ? `## Issue #${issue.number}: ${issue.title}\n\n` +
-      `**Suggested branch:** \`${branchName}\`\n\n` +
-      `### Relevant Files\n${plan.files}\n\n` +
-      `### Implementation Plan\n${plan.plan}\n\n` +
-      `[Open issue](${issue.html_url}) · [Fork repo](${forkUrl}) · [Open a PR](${compareUrl})`
-    : "";
-
   const files = plan ? parseFiles(plan.files) : [];
   const steps = plan ? parseSteps(plan.plan) : [];
+  const prerequisites = plan ? parseBullets(plan.prerequisites) : [];
+  const testing = plan ? parseBullets(plan.testing) : [];
+  const gotchas = plan ? parseBullets(plan.gotchas) : [];
+
+  // Only show tabs that have content (files + steps always present).
+  const tabs: TabKey[] = ["files", "steps"];
+  if (testing.length) tabs.push("testing");
+  if (gotchas.length) tabs.push("gotchas");
+
+  const tabCount: Record<TabKey, number> = {
+    files: files.length,
+    steps: steps.length,
+    testing: testing.length,
+    gotchas: gotchas.length,
+  };
+
+  const markdownText = plan
+    ? `## Issue #${issue.number}: ${issue.title}\n\n` +
+      (plan.summary ? `${plan.summary}\n\n` : "") +
+      `**Difficulty:** ${plan.difficulty || "—"}  ·  **Effort:** ${plan.effort || "—"}  ·  ` +
+      `**Branch:** \`${branchName}\`\n\n` +
+      (plan.prerequisites ? `### Prerequisites\n${plan.prerequisites}\n\n` : "") +
+      `### Relevant Files\n${plan.files}\n\n` +
+      `### Implementation Plan\n${plan.plan}\n\n` +
+      (plan.testing ? `### Testing\n${plan.testing}\n\n` : "") +
+      (plan.gotchas ? `### Gotchas\n${plan.gotchas}\n\n` : "") +
+      `[Open issue](${issue.html_url}) · [Fork repo](${forkUrl}) · [Open a PR](${compareUrl})`
+    : "";
 
   return (
     <div className={cn("flex flex-col rounded-xl border border-border bg-card overflow-hidden h-full", className)}>
@@ -333,6 +413,17 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           <p className="truncate text-xs text-muted-foreground font-mono">
             #{issue.number} · {issue.title}
           </p>
+          {plan && !loading && (plan.difficulty || plan.effort) && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <DifficultyBadge difficulty={plan.difficulty} />
+              {plan.effort && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  {plan.effort}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-1.5">
           <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
@@ -347,17 +438,16 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
 
       {/* ── Tab bar (only when plan is loaded) ── */}
       {plan && !loading && (
-        <div className="flex items-center gap-1 px-4 pt-3 pb-0 border-b border-border flex-shrink-0">
-          {(["files", "steps"] as const).map((tab) => {
+        <div className="flex items-center gap-1 px-4 pt-3 pb-0 border-b border-border flex-shrink-0 overflow-x-auto">
+          {tabs.map((tab) => {
             const isActive = activeTab === tab;
-            const count = tab === "files" ? files.length : steps.length;
-            const Icon = tab === "files" ? FileCode2 : ListChecks;
+            const { label, icon: Icon } = TAB_META[tab];
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 pb-2.5 pt-1 text-xs font-medium transition-colors cursor-pointer",
+                  "flex items-center gap-1.5 px-3 pb-2.5 pt-1 text-xs font-medium transition-colors cursor-pointer whitespace-nowrap",
                   "border-b-2 -mb-px",
                   isActive
                     ? "border-primary text-foreground"
@@ -365,14 +455,14 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
-                <span className="capitalize">{tab}</span>
+                <span>{label}</span>
                 <span
                   className={cn(
                     "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
                     isActive ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"
                   )}
                 >
-                  {count}
+                  {tabCount[tab]}
                 </span>
               </button>
             );
@@ -392,9 +482,32 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           )}
 
           {plan && !loading && (
-            <div className="animate-fade-in">
+            <div className="animate-fade-in space-y-4">
+              {/* Summary appears above every tab */}
+              {plan.summary && (
+                <p className="text-sm text-foreground/90 leading-relaxed">{plan.summary}</p>
+              )}
+
               {activeTab === "files" && <FilesTab files={files} />}
-              {activeTab === "steps" && <StepsTab steps={steps} />}
+
+              {activeTab === "steps" && (
+                <div className="space-y-4">
+                  {prerequisites.length > 0 && (
+                    <div className="rounded-lg border border-border bg-secondary/20 p-3">
+                      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                        <BookOpen className="h-3.5 w-3.5" />
+                        Before you start
+                      </div>
+                      <BulletList items={prerequisites} accent="#64748b" />
+                    </div>
+                  )}
+                  <StepsTab steps={steps} />
+                </div>
+              )}
+
+              {activeTab === "testing" && <BulletList items={testing} accent="#22c55e" />}
+
+              {activeTab === "gotchas" && <BulletList items={gotchas} accent="#f59e0b" />}
             </div>
           )}
         </div>

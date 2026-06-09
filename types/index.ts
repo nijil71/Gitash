@@ -24,9 +24,24 @@ export interface GitHubIssue {
   user: GitHubUser | null;
 }
 
+export type PlanDifficulty = "beginner" | "intermediate" | "advanced" | "";
+
 export interface ContributionPlan {
+  /** 1–2 sentence plain-language overview of the issue and the fix approach. */
+  summary: string;
+  difficulty: PlanDifficulty;
+  /** Rough time estimate for a junior dev, e.g. "1–2 hours". */
+  effort: string;
+  /** Bullet list of knowledge/setup needed before starting. */
+  prerequisites: string;
+  /** Bullet list of relevant files, each with a one-line reason. */
   files: string;
+  /** Numbered step-by-step implementation guide. */
   plan: string;
+  /** Bullet list of how to verify the change. */
+  testing: string;
+  /** Bullet list of pitfalls, edge cases, or conventions to respect. */
+  gotchas: string;
 }
 
 export type ModelProvider = "claude" | "openai" | "gemini";

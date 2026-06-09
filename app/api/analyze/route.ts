@@ -4,6 +4,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import type { ContributionPlan, ModelProvider } from "@/types";
 import { getModel } from "@/lib/models";
+import { parsePlan, isEmptyPlan } from "@/lib/planParse";
 
 // ── In-process response cache ──────────────────────────────────────────────
 // Keyed by "owner/repo#issueNumber@provider". Survives the dev-server lifetime
@@ -45,49 +46,6 @@ const REQUIRED_FIELDS: (keyof AnalyzeRequestBody)[] = [
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function stripFences(text: string): string {
-  return text
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "")
-    .trim();
-}
-
-// Models occasionally wrap JSON in prose or fences. Pull out the outermost
-// {...} object so a stray prefix/suffix doesn't break JSON.parse.
-function extractJsonObject(text: string): string {
-  const stripped = stripFences(text);
-  const first = stripped.indexOf("{");
-  const last = stripped.lastIndexOf("}");
-  if (first !== -1 && last > first) return stripped.slice(first, last + 1);
-  return stripped;
-}
-
-// Last-resort salvage for truncated/invalid JSON: pull the "files" and "plan"
-// string values out directly so the user still gets a usable plan.
-function salvageFields(text: string): { files: string; plan: string } | null {
-  const grab = (key: string): string => {
-    const m = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)`, "i"));
-    if (!m) return "";
-    try {
-      // Re-wrap and parse to decode escapes (\n, \", …) even if unterminated.
-      return JSON.parse(`"${m[1]}"`) as string;
-    } catch {
-      return m[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
-    }
-  };
-  const files = grab("files");
-  const plan = grab("plan");
-  return files || plan ? { files, plan } : null;
-}
-
-function toStr(v: unknown): string {
-  if (typeof v === "string") return v;
-  if (Array.isArray(v)) return v.join("\n");
-  if (v && typeof v === "object") return JSON.stringify(v, null, 2);
-  return String(v ?? "");
-}
-
 function isAuthError(err: unknown): boolean {
   if (err instanceof Anthropic.AuthenticationError) return true;
   if (err instanceof Anthropic.APIError && err.status === 401) return true;
@@ -103,13 +61,16 @@ function isAuthError(err: unknown): boolean {
 // ── Shared prompt pieces ───────────────────────────────────────────────────
 const SYSTEM_PROMPT =
   "You are a senior open-source contributor helping a junior developer make their first contribution. " +
-  "Always respond with a single valid JSON object — no markdown fences, no extra keys. " +
-  'The object must have exactly two string keys: "files" and "plan".';
+  "Always respond with a single valid JSON object — no markdown fences, no prose outside the JSON. " +
+  "Every value must be a plain string (use • bullets and \\n newlines inside strings; do not use nested arrays or objects). " +
+  "Emit the keys in the order given.";
 
 // Caps to keep the prompt well within model context limits.
 const MAX_TREE_PATHS = 400;
 const MAX_COMMENTS = 8;
 const MAX_COMMENT_CHARS = 400;
+// Modern models have large context windows; 600 was needlessly conservative.
+const MAX_BODY_CHARS = 6000;
 
 function buildUserPrompt(
   owner: string,
@@ -143,12 +104,19 @@ function buildUserPrompt(
     `Repo: ${owner}/${repo}\n` +
     `Issue #${issueNumber}: ${issueTitle}\n` +
     `Labels: ${labels}\n` +
-    `Description: ${issueBody.slice(0, 1500)}\n\n` +
+    `Description: ${issueBody.slice(0, MAX_BODY_CHARS)}\n\n` +
     commentsSection +
     treeSection +
-    `Return JSON with:\n` +
-    `- "files": bullet list (•) of 4-6 relevant files/dirs, each with a one-line reason\n` +
-    `- "plan": numbered 5-step implementation guide written for a junior developer`
+    `Return a JSON object with these string keys, in this exact order:\n` +
+    `- "summary": 1–2 sentence plain-language overview of what the issue asks and your fix approach\n` +
+    `- "difficulty": one word — "beginner", "intermediate", or "advanced"\n` +
+    `- "effort": rough time estimate for a junior dev, e.g. "1–2 hours"\n` +
+    `- "prerequisites": bullet list (•) of knowledge or setup needed before starting\n` +
+    `- "files": bullet list (•) of 4–6 relevant files/dirs, each with a one-line reason ` +
+    `(choose ONLY paths from the tree above; do not invent file names)\n` +
+    `- "plan": numbered 5-step implementation guide written for a junior developer\n` +
+    `- "testing": bullet list (•) of how to verify the change — tests to run or add, manual checks\n` +
+    `- "gotchas": bullet list (•) of pitfalls, edge cases, or project conventions to respect`
   );
 }
 
@@ -309,24 +277,15 @@ async function handlePost(req: Request): Promise<NextResponse> {
     clearTimeout(timer);
   }
 
-  try {
-    const parsed = JSON.parse(extractJsonObject(rawText)) as Record<string, unknown>;
-    const result: ContributionPlan = {
-      files: toStr(parsed.files),
-      plan: toStr(parsed.plan),
-    };
-    cacheSet(cacheKey, result);
-    return NextResponse.json(result);
-  } catch {
-    // Truncated or malformed JSON — try to salvage the two fields directly
-    // rather than dumping the raw JSON braces into the files panel.
-    const salvaged = salvageFields(rawText);
-    if (salvaged && (salvaged.files || salvaged.plan)) {
-      return NextResponse.json(salvaged);
-    }
+  // parsePlan prefers a clean JSON.parse and falls back to field salvage for
+  // truncated/wrapped output, so we never dump raw JSON into the panel.
+  const result = parsePlan(rawText);
+  if (isEmptyPlan(result)) {
     return NextResponse.json(
       { error: "The model returned an unparseable response. Please try again." },
       { status: 502 }
     );
   }
+  cacheSet(cacheKey, result);
+  return NextResponse.json(result);
 }
