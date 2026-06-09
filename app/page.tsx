@@ -17,10 +17,17 @@ import ModelSelector from "@/components/ModelSelector";
 import RepoInput from "@/components/RepoInput";
 import LabelFilter from "@/components/LabelFilter";
 import IssueList from "@/components/IssueList";
+import IssueControls, { SORT_OPTIONS } from "@/components/IssueControls";
 import ContributionPlanPanel from "@/components/ContributionPlan";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { fetchLabels, fetchIssues, fetchRepoMeta, GitHubAPIError } from "@/lib/github";
+import {
+  fetchLabels,
+  fetchIssues,
+  fetchRepoMeta,
+  GitHubAPIError,
+  ISSUES_PER_PAGE,
+} from "@/lib/github";
 import { MODEL_OPTIONS, getModel } from "@/lib/models";
 import type { GitHubIssue, GitHubLabel, ModelOption, ModelProvider } from "@/types";
 import { cn } from "@/lib/utils";
@@ -42,6 +49,24 @@ function toErrorMessage(err: unknown): string {
   }
   if (err instanceof Error) return err.message;
   return "Something went wrong. Please try again.";
+}
+
+// Client-side search over the issues already loaded into the list.
+function filterIssues(issues: GitHubIssue[], query: string): GitHubIssue[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return issues;
+  return issues.filter((issue) => {
+    const haystack = [
+      `#${issue.number}`,
+      issue.title,
+      issue.body ?? "",
+      issue.user?.login ?? "",
+      ...issue.labels.map((l) => l.name),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
 }
 
 // ── Provider setup screen ──────────────────────────────────────────────────
@@ -216,7 +241,13 @@ export default function Home() {
   const [issues, setIssues] = useState<GitHubIssue[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<GitHubIssue | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState(SORT_OPTIONS[0].key);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
     // Restore GitHub token (independent of AI provider)
@@ -273,6 +304,26 @@ export default function Home() {
     }
   };
 
+  // Single source of truth for fetching a page of issues with the current
+  // label/sort selection. Callers own the loading/error UI.
+  const fetchIssuePage = (
+    owner: string,
+    repo: string,
+    labelList: string[],
+    key: string,
+    pageNum: number
+  ): Promise<GitHubIssue[]> => {
+    const opt = SORT_OPTIONS.find((o) => o.key === key) ?? SORT_OPTIONS[0];
+    return fetchIssues(owner, repo, {
+      labels: labelList.length ? labelList.join(",") : undefined,
+      sort: opt.field,
+      direction: opt.direction,
+      page: pageNum,
+      perPage: ISSUES_PER_PAGE,
+      token: githubToken || undefined,
+    });
+  };
+
   const handleAnalyze = async (owner: string, repo: string) => {
     setLoading(true);
     setError(null);
@@ -281,6 +332,9 @@ export default function Home() {
     setIssues([]);
     setSelectedIssue(null);
     setActiveLabels([]);
+    setSearch("");
+    setPage(1);
+    setHasMore(false);
 
     try {
       const [meta, fetchedLabels] = await Promise.all([
@@ -296,13 +350,27 @@ export default function Home() {
       const initialLabels = defaultLabel ? [defaultLabel] : [];
       setActiveLabels(initialLabels);
 
-      const initialIssues = await fetchIssues(
-        owner,
-        repo,
-        initialLabels.length ? initialLabels.join(",") : undefined,
-        githubToken || undefined
-      );
+      const initialIssues = await fetchIssuePage(owner, repo, initialLabels, sortKey, 1);
       setIssues(initialIssues);
+      setHasMore(initialIssues.length === ISSUES_PER_PAGE);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reload page 1 of issues for a given label/sort selection.
+  const reloadIssues = async (labelList: string[], key: string) => {
+    if (!repoMeta) return;
+    setSelectedIssue(null);
+    setLoading(true);
+    setError(null);
+    setPage(1);
+    try {
+      const fetched = await fetchIssuePage(repoMeta.owner, repoMeta.repo, labelList, key, 1);
+      setIssues(fetched);
+      setHasMore(fetched.length === ISSUES_PER_PAGE);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -311,30 +379,37 @@ export default function Home() {
   };
 
   // Toggle a label on/off. Passing "" clears all (the "All" pill).
-  const handleLabelToggle = async (label: string) => {
-    if (!repoMeta) return;
-    const next = label === ""
-      ? []
-      : activeLabels.includes(label)
-        ? activeLabels.filter((l) => l !== label)
-        : [...activeLabels, label];
-
+  const handleLabelToggle = (label: string) => {
+    const next =
+      label === ""
+        ? []
+        : activeLabels.includes(label)
+          ? activeLabels.filter((l) => l !== label)
+          : [...activeLabels, label];
     setActiveLabels(next);
-    setSelectedIssue(null);
-    setLoading(true);
+    void reloadIssues(next, sortKey);
+  };
+
+  const handleSortChange = (key: string) => {
+    if (key === sortKey) return;
+    setSortKey(key);
+    void reloadIssues(activeLabels, key);
+  };
+
+  const handleLoadMore = async () => {
+    if (!repoMeta || loadingMore) return;
+    const nextPage = page + 1;
+    setLoadingMore(true);
     setError(null);
     try {
-      const filtered = await fetchIssues(
-        repoMeta.owner,
-        repoMeta.repo,
-        next.length ? next.join(",") : undefined,
-        githubToken || undefined
-      );
-      setIssues(filtered);
+      const more = await fetchIssuePage(repoMeta.owner, repoMeta.repo, activeLabels, sortKey, nextPage);
+      setIssues((prev) => [...prev, ...more]);
+      setPage(nextPage);
+      setHasMore(more.length === ISSUES_PER_PAGE);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -355,6 +430,8 @@ export default function Home() {
       </>
     );
   }
+
+  const visibleIssues = filterIssues(issues, search);
 
   // Main app
   return (
@@ -461,12 +538,29 @@ export default function Home() {
                   </h2>
                   {issues.length > 0 && (
                     <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      {issues.length}
+                      {search ? `${visibleIssues.length} / ${issues.length}` : issues.length}
                     </span>
                   )}
                 </div>
+                <div className="mb-3">
+                  <IssueControls
+                    search={search}
+                    onSearchChange={setSearch}
+                    sortKey={sortKey}
+                    onSortChange={handleSortChange}
+                    disabled={loading}
+                  />
+                </div>
                 <div className={cn("transition-opacity duration-150", loading && "pointer-events-none opacity-40")}>
-                  <IssueList issues={issues} selectedIssue={selectedIssue} onSelect={setSelectedIssue} />
+                  <IssueList
+                    issues={visibleIssues}
+                    selectedIssue={selectedIssue}
+                    onSelect={setSelectedIssue}
+                    hasMore={hasMore && !search}
+                    loadingMore={loadingMore}
+                    onLoadMore={handleLoadMore}
+                    filtered={Boolean(search) && issues.length > 0}
+                  />
                 </div>
               </div>
 

@@ -5,6 +5,12 @@ export interface GitHubLabel {
   description: string | null;
 }
 
+export interface GitHubUser {
+  login: string;
+  avatar_url: string;
+  html_url: string;
+}
+
 export interface GitHubIssue {
   number: number;
   title: string;
@@ -12,6 +18,10 @@ export interface GitHubIssue {
   labels: GitHubLabel[];
   html_url: string;
   state: string;
+  comments: number;
+  created_at: string;
+  updated_at: string;
+  user: GitHubUser | null;
 }
 
 export interface ContributionPlan {

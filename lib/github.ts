@@ -48,23 +48,53 @@ export async function fetchLabels(
   return res.json();
 }
 
+export const ISSUES_PER_PAGE = 30;
+
+export type IssueSortField = "created" | "updated" | "comments";
+export type SortDirection = "asc" | "desc";
+
+export interface FetchIssuesOptions {
+  /** Comma-separated label names; issues must carry ALL of them. */
+  labels?: string;
+  sort?: IssueSortField;
+  direction?: SortDirection;
+  page?: number;
+  perPage?: number;
+  token?: string;
+}
+
 export async function fetchIssues(
   owner: string,
   repo: string,
-  label?: string,
-  githubToken?: string
+  options: FetchIssuesOptions = {}
 ): Promise<GitHubIssue[]> {
-  const params = new URLSearchParams({ state: "open", per_page: "30" });
-  if (label) params.set("labels", label);
+  const {
+    labels,
+    sort = "created",
+    direction = "desc",
+    page = 1,
+    perPage = ISSUES_PER_PAGE,
+    token,
+  } = options;
+
+  const params = new URLSearchParams({
+    state: "open",
+    per_page: String(perPage),
+    page: String(page),
+    sort,
+    direction,
+  });
+  if (labels) params.set("labels", labels);
 
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/issues?${params}`,
-    { headers: buildHeaders(githubToken) }
+    { headers: buildHeaders(token) }
   );
   assertOk(res, `fetchIssues(${owner}/${repo})`);
 
   const items: Array<GitHubIssue & { pull_request?: unknown }> =
     await res.json();
+  // The issues endpoint returns PRs too — drop them.
   return items.filter((item) => !item.pull_request);
 }
 

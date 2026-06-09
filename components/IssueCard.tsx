@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, MessageSquare } from "lucide-react";
 import type { GitHubIssue } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,27 @@ interface Props {
   issue: GitHubIssue;
   selected: boolean;
   onClick: () => void;
+}
+
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  const units: [number, string][] = [
+    [60, "s"],
+    [60, "m"],
+    [24, "h"],
+    [30, "d"],
+    [12, "mo"],
+    [Number.POSITIVE_INFINITY, "y"],
+  ];
+  let value = secs;
+  for (let i = 0; i < units.length; i++) {
+    const [size, label] = units[i];
+    if (value < size) return `${Math.floor(value)}${label} ago`;
+    value /= size;
+  }
+  return "";
 }
 
 export default function IssueCard({ issue, selected, onClick }: Props) {
@@ -28,10 +49,26 @@ export default function IssueCard({ issue, selected, onClick }: Props) {
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 pl-1">
-          <div className="mb-1 flex items-center gap-1.5">
-            <span className="font-mono text-[11px] text-muted-foreground">
-              #{issue.number}
-            </span>
+          <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+            <span className="font-mono">#{issue.number}</span>
+            {issue.user && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span>{issue.user.login}</span>
+              </>
+            )}
+            {issue.created_at && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span>{timeAgo(issue.created_at)}</span>
+              </>
+            )}
+            {issue.comments > 0 && (
+              <span className="ml-auto inline-flex items-center gap-1 text-muted-foreground/80">
+                <MessageSquare className="h-3 w-3" />
+                {issue.comments}
+              </span>
+            )}
           </div>
 
           <p
