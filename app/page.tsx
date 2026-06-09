@@ -9,6 +9,7 @@ import {
   ArrowRight,
   ExternalLink,
   GitBranch,
+  Clock3,
 } from "lucide-react";
 import { GitashIcon } from "@/components/GitashIcon";
 import ApiKeyModal, { getStoredKey } from "@/components/ApiKeyModal";
@@ -32,6 +33,7 @@ import {
   type RepoTree,
 } from "@/lib/github";
 import { MODEL_OPTIONS, getModel } from "@/lib/models";
+import { getRecentRepos, addRecentRepo, type RecentRepo } from "@/lib/recentRepos";
 import type { GitHubIssue, GitHubLabel, ModelOption, ModelProvider } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -257,6 +259,11 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
+  const [recentRepos, setRecentRepos] = useState<RecentRepo[]>([]);
+  useEffect(() => {
+    setRecentRepos(getRecentRepos());
+  }, []);
+
   // On narrow screens the plan renders below the issue list — scroll to it
   // when an issue is selected so the user isn't left looking at the list.
   const planRef = useRef<HTMLDivElement>(null);
@@ -378,6 +385,7 @@ export default function Home() {
       const initialIssues = await fetchIssuePage(owner, repo, initialLabels, sortKey, 1);
       setIssues(initialIssues);
       setHasMore(initialIssues.length === ISSUES_PER_PAGE);
+      setRecentRepos(addRecentRepo(owner, repo));
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -663,19 +671,47 @@ export default function Home() {
                 Paste a GitHub URL above to browse open issues and generate contribution plans.
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
-              {["vercel/next.js", "shadcn-ui/ui", "facebook/react"].map((example) => (
-                <button
-                  key={example}
-                  onClick={() => {
-                    const [owner, repo] = example.split("/");
-                    handleAnalyze(owner, repo);
-                  }}
-                  className="rounded-full border border-border bg-secondary/50 px-3 py-1 font-mono text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer"
-                >
-                  {example}
-                </button>
-              ))}
+
+            {recentRepos.length > 0 && (
+              <div className="w-full max-w-sm">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  Recent
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {recentRepos.map(({ owner, repo }) => (
+                    <button
+                      key={`${owner}/${repo}`}
+                      onClick={() => handleAnalyze(owner, repo)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 font-mono text-xs text-foreground/80 hover:bg-primary/10 hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <Clock3 className="h-3 w-3 text-primary/70" />
+                      {owner}/{repo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="w-full max-w-sm">
+              {recentRepos.length > 0 && (
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  Try an example
+                </p>
+              )}
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {["vercel/next.js", "shadcn-ui/ui", "facebook/react"].map((example) => (
+                  <button
+                    key={example}
+                    onClick={() => {
+                      const [owner, repo] = example.split("/");
+                      handleAnalyze(owner, repo);
+                    }}
+                    className="rounded-full border border-border bg-secondary/50 px-3 py-1 font-mono text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
