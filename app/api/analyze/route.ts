@@ -41,6 +41,8 @@ interface AnalyzeRequestBody {
   provider: ModelProvider;
   fileTree?: string[];
   comments?: { author: string; body: string }[];
+  /** When true, ignore the cached plan and regenerate from scratch. */
+  refresh?: boolean;
 }
 
 const REQUIRED_FIELDS: (keyof AnalyzeRequestBody)[] = [
@@ -233,7 +235,7 @@ async function handlePost(req: Request): Promise<Response> {
     );
   }
 
-  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider, fileTree, comments } =
+  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider, fileTree, comments, refresh } =
     body as AnalyzeRequestBody;
 
   let modelOption;
@@ -243,13 +245,15 @@ async function handlePost(req: Request): Promise<Response> {
     return NextResponse.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
   }
 
-  // Cache hit — skip the AI call entirely
+  // Cache hit — skip the AI call entirely (unless the client asked to refresh).
   const cacheKey = `${owner}/${repo}#${issueNumber}@${provider}`;
-  const cached = responseCache.get(cacheKey);
-  if (cached) {
-    return NextResponse.json(cached, {
-      headers: { "X-Cache": "HIT" },
-    });
+  if (!refresh) {
+    const cached = responseCache.get(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached, {
+        headers: { "X-Cache": "HIT" },
+      });
+    }
   }
 
   const userPrompt = buildUserPrompt(

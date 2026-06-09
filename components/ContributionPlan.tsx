@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ExternalLink,
   Bot,
@@ -15,6 +15,7 @@ import {
   BookOpen,
   FlaskConical,
   TriangleAlert,
+  RefreshCw,
 } from "lucide-react";
 import type {
   ContributionPlan as ContributionPlanData,
@@ -312,9 +313,16 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("files");
+  const [reloadToken, setReloadToken] = useState(0);
+  // Marks the next effect run as a manual regenerate (bypasses the cache).
+  const refreshRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    // Consume the one-shot refresh flag set by the regenerate button.
+    const refresh = refreshRef.current;
+    refreshRef.current = false;
+
     setLoading(true);
     setStreaming(false);
     setPlan(null);
@@ -354,6 +362,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           provider: selectedModel.id,
           fileTree,
           comments,
+          refresh,
         }),
       });
 
@@ -401,7 +410,13 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [issue.number, owner, repo, apiKey, selectedModel.id]);
+  }, [issue.number, owner, repo, apiKey, selectedModel.id, reloadToken]);
+
+  const handleRegenerate = () => {
+    if (loading || streaming) return;
+    refreshRef.current = true;
+    setReloadToken((t) => t + 1);
+  };
 
   const branchName = suggestBranchName(issue);
   const forkUrl = `https://github.com/${owner}/${repo}/fork`;
@@ -478,6 +493,19 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
               GitHub
             </a>
           </Button>
+          {plan && !loading && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRegenerate}
+              disabled={streaming}
+              aria-label="Regenerate plan"
+              title="Regenerate (ignores the cached plan)"
+              className="h-8 w-8 p-0"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", streaming && "animate-spin")} />
+            </Button>
+          )}
           {plan && <CopyButton text={markdownText} label="Copy plan" />}
         </div>
       </div>
