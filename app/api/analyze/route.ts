@@ -21,7 +21,9 @@ function cacheSet(key: string, value: ContributionPlan) {
 }
 
 // ── Request timeout ────────────────────────────────────────────────────────
-const TIMEOUT_MS = 25_000; // 25 s — under Vercel Hobby's 30 s function limit
+// We stream, so this bounds total generation time (not time-to-first-byte).
+// Kept under the 60 s maxDuration below.
+const TIMEOUT_MS = 50_000;
 
 // Headroom for the response. The richer prompt (file tree + comments) yields
 // longer file lists and plans; too low a cap truncates the JSON mid-object and
@@ -54,6 +56,11 @@ function isAuthError(err: unknown): boolean {
   if (err instanceof Error && "status" in err) {
     const s = (err as Error & { status: number }).status;
     if (s === 401 || s === 403) return true;
+  }
+  // Gemini surfaces an invalid key as a 400 with this message rather than a
+  // typed auth error, so match on the message.
+  if (err instanceof Error && /api[_ ]?key[_ ]?(not valid|invalid)|API_KEY_INVALID/i.test(err.message)) {
+    return true;
   }
   return false;
 }
@@ -120,76 +127,81 @@ function buildUserPrompt(
   );
 }
 
-// ── Provider callers (each with timeout + low temperature) ─────────────────
-async function callClaude(
+// ── Provider streamers ─────────────────────────────────────────────────────
+// Each yields incremental text deltas. The signal lets us abort on timeout —
+// including Gemini, which previously ignored it.
+async function* streamProvider(
+  provider: ModelProvider,
   apiKey: string,
   model: string,
   userPrompt: string,
   signal: AbortSignal
-): Promise<string> {
-  const client = new Anthropic({ apiKey });
-  const message = await client.messages.create(
-    {
+): AsyncGenerator<string> {
+  if (provider === "claude") {
+    const client = new Anthropic({ apiKey });
+    const stream = await client.messages.create(
+      {
+        model,
+        max_tokens: MAX_OUTPUT_TOKENS,
+        temperature: 0.2,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userPrompt }],
+        stream: true,
+      },
+      { signal }
+    );
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        yield event.delta.text;
+      }
+    }
+  } else if (provider === "openai") {
+    const client = new OpenAI({ apiKey });
+    const stream = await client.chat.completions.create(
+      {
+        model,
+        max_tokens: MAX_OUTPUT_TOKENS,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        stream: true,
+      },
+      { signal }
+    );
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) yield delta;
+    }
+  } else {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const geminiModel = genAI.getGenerativeModel({
       model,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      temperature: 0.2,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
-    },
-    { signal }
-  );
-  const block = message.content[0];
-  if (block.type !== "text") throw new Error("Unexpected response type from Claude");
-  return block.text;
-}
-
-async function callOpenAI(
-  apiKey: string,
-  model: string,
-  userPrompt: string,
-  signal: AbortSignal
-): Promise<string> {
-  const client = new OpenAI({ apiKey });
-  const completion = await client.chat.completions.create(
-    {
-      model,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-    },
-    { signal }
-  );
-  return completion.choices[0]?.message.content ?? "";
-}
-
-async function callGemini(
-  apiKey: string,
-  model: string,
-  userPrompt: string,
-  _signal: AbortSignal // eslint-disable-line @typescript-eslint/no-unused-vars
-): Promise<string> {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const geminiModel = genAI.getGenerativeModel({
-    model,
-    systemInstruction: SYSTEM_PROMPT,
-    generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      responseMimeType: "application/json",
-    },
-  });
-  const result = await geminiModel.generateContent(
-    { contents: [{ role: "user", parts: [{ text: userPrompt }] }] }
-  );
-  return result.response.text();
+      systemInstruction: SYSTEM_PROMPT,
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        responseMimeType: "application/json",
+      },
+    });
+    const result = await geminiModel.generateContentStream(
+      { contents: [{ role: "user", parts: [{ text: userPrompt }] }] },
+      { signal }
+    );
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) yield text;
+    }
+  }
 }
 
 // ── Route handler ──────────────────────────────────────────────────────────
-export async function POST(req: Request): Promise<NextResponse> {
+// Allow longer than the default since we hold the connection open to stream.
+export const maxDuration = 60;
+
+export async function POST(req: Request): Promise<Response> {
   try {
     return await handlePost(req);
   } catch (err) {
@@ -198,7 +210,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 }
 
-async function handlePost(req: Request): Promise<NextResponse> {
+async function handlePost(req: Request): Promise<Response> {
   const xApiKey = req.headers.get("x-api-key");
   if (!xApiKey) {
     return NextResponse.json({ error: "Missing x-api-key header" }, { status: 401 });
@@ -251,20 +263,18 @@ async function handlePost(req: Request): Promise<NextResponse> {
     Array.isArray(comments) ? comments : []
   );
 
-  // Timeout wrapper
+  // Abort the provider call if it runs past the timeout.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  let rawText: string;
+  // Prime the first chunk so initial errors (bad key, network) come back as a
+  // clean JSON error before we commit to a streaming response.
+  const iterator = streamProvider(provider, xApiKey, modelOption.model, userPrompt, controller.signal);
+  let firstChunk: IteratorResult<string>;
   try {
-    if (provider === "claude") {
-      rawText = await callClaude(xApiKey, modelOption.model, userPrompt, controller.signal);
-    } else if (provider === "openai") {
-      rawText = await callOpenAI(xApiKey, modelOption.model, userPrompt, controller.signal);
-    } else {
-      rawText = await callGemini(xApiKey, modelOption.model, userPrompt, controller.signal);
-    }
+    firstChunk = await iterator.next();
   } catch (err) {
+    clearTimeout(timer);
     if (err instanceof Error && err.name === "AbortError") {
       return NextResponse.json({ error: "Request timed out. Please try again." }, { status: 504 });
     }
@@ -273,19 +283,50 @@ async function handlePost(req: Request): Promise<NextResponse> {
     }
     const message = err instanceof Error ? err.message : "Provider API error";
     return NextResponse.json({ error: message }, { status: 502 });
-  } finally {
-    clearTimeout(timer);
   }
 
-  // parsePlan prefers a clean JSON.parse and falls back to field salvage for
-  // truncated/wrapped output, so we never dump raw JSON into the panel.
-  const result = parsePlan(rawText);
-  if (isEmptyPlan(result)) {
-    return NextResponse.json(
-      { error: "The model returned an unparseable response. Please try again." },
-      { status: 502 }
-    );
-  }
-  cacheSet(cacheKey, result);
-  return NextResponse.json(result);
+  // Stream raw model text to the client, which parses it progressively. We also
+  // accumulate the full text here so we can cache the parsed plan at the end.
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller2) {
+      let full = "";
+      try {
+        if (!firstChunk.done && firstChunk.value) {
+          full += firstChunk.value;
+          controller2.enqueue(encoder.encode(firstChunk.value));
+        }
+        while (true) {
+          const { value, done } = await iterator.next();
+          if (done) break;
+          if (value) {
+            full += value;
+            controller2.enqueue(encoder.encode(value));
+          }
+        }
+        const parsed = parsePlan(full);
+        if (!isEmptyPlan(parsed)) cacheSet(cacheKey, parsed);
+      } catch (err) {
+        // Stream already open; we can't change the status. End it and let the
+        // client salvage whatever arrived.
+        console.error("[/api/analyze] stream error:", err);
+      } finally {
+        clearTimeout(timer);
+        controller2.close();
+      }
+    },
+    cancel() {
+      controller.abort();
+      clearTimeout(timer);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      "X-Accel-Buffering": "no",
+      "X-Stream": "1",
+    },
+  });
 }

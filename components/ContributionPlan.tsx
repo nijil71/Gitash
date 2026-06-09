@@ -23,6 +23,7 @@ import type {
   PlanDifficulty,
 } from "@/types";
 import { fetchIssueComments } from "@/lib/github";
+import { parsePlan } from "@/lib/planParse";
 import LoadingSkeleton from "./LoadingSkeleton";
 import CopyButton from "./CopyButton";
 import { Button } from "@/components/ui/button";
@@ -247,6 +248,15 @@ function StepsTab({ steps }: { steps: StepEntry[] }) {
   );
 }
 
+function StreamingPlaceholder() {
+  return (
+    <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+      Writing this section…
+    </div>
+  );
+}
+
 function BulletList({ items, accent }: { items: string[]; accent: string }) {
   if (items.length === 0)
     return <p className="text-xs text-muted-foreground text-center py-8">Nothing listed</p>;
@@ -299,12 +309,14 @@ const TAB_META: Record<TabKey, { label: string; icon: typeof FileCode2 }> = {
 export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree, githubToken, defaultBranch, selectedModel, className }: Props) {
   const [plan, setPlan] = useState<ContributionPlanData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("files");
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setStreaming(false);
     setPlan(null);
     setError(null);
     setActiveTab("files");
@@ -346,18 +358,46 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
       });
 
       const ct = res.headers.get("content-type") ?? "";
-      if (!ct.includes("application/json"))
-        throw new Error(`Server error (${res.status}) — please try again`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
-      return data as ContributionPlanData;
-    })()
-      .then((data) => { if (!cancelled && data) setPlan(data); })
-      .catch((err: unknown) => {
-        if (!cancelled)
-          setError(err instanceof Error ? err.message : "Something went wrong");
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
+
+      // Cache hit or error path: a plain JSON response.
+      if (ct.includes("application/json") || !res.body) {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
+        if (!cancelled) {
+          setPlan(data as ContributionPlanData);
+          setLoading(false);
+        }
+        return;
+      }
+
+      // Streaming path: parse the accumulating text on every chunk.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = "";
+      if (!cancelled) setStreaming(true);
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (cancelled) {
+          reader.cancel().catch(() => {});
+          return;
+        }
+        acc += decoder.decode(value, { stream: true });
+        setPlan(parsePlan(acc));
+        setLoading(false);
+      }
+      if (!cancelled) {
+        setPlan(parsePlan(acc));
+        setLoading(false);
+        setStreaming(false);
+      }
+    })().catch((err: unknown) => {
+      if (!cancelled) {
+        setError(err instanceof Error ? err.message : "Something went wrong");
+        setLoading(false);
+        setStreaming(false);
+      }
+    });
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -409,6 +449,12 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
             <Bot className="h-4 w-4 text-primary flex-shrink-0" />
             <span className="text-sm font-semibold text-foreground">Contribution Plan</span>
             <ModelBadge model={selectedModel} />
+            {streaming && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+                Generating…
+              </span>
+            )}
           </div>
           <p className="truncate text-xs text-muted-foreground font-mono">
             #{issue.number} · {issue.title}
@@ -488,7 +534,8 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
                 <p className="text-sm text-foreground/90 leading-relaxed">{plan.summary}</p>
               )}
 
-              {activeTab === "files" && <FilesTab files={files} />}
+              {activeTab === "files" &&
+                (files.length === 0 && streaming ? <StreamingPlaceholder /> : <FilesTab files={files} />)}
 
               {activeTab === "steps" && (
                 <div className="space-y-4">
@@ -501,7 +548,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
                       <BulletList items={prerequisites} accent="#64748b" />
                     </div>
                   )}
-                  <StepsTab steps={steps} />
+                  {steps.length === 0 && streaming ? <StreamingPlaceholder /> : <StepsTab steps={steps} />}
                 </div>
               )}
 
