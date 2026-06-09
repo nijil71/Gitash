@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
-import type { ContributionPlan } from "@/types";
+import type { ContributionPlan, ModelProvider } from "@/types";
+import { getModel } from "@/lib/models";
 
 interface AnalyzeRequestBody {
   owner: string;
@@ -9,6 +12,7 @@ interface AnalyzeRequestBody {
   issueTitle: string;
   issueBody: string;
   labels: string;
+  provider: ModelProvider;
 }
 
 const REQUIRED_FIELDS: (keyof AnalyzeRequestBody)[] = [
@@ -18,6 +22,7 @@ const REQUIRED_FIELDS: (keyof AnalyzeRequestBody)[] = [
   "issueTitle",
   "issueBody",
   "labels",
+  "provider",
 ];
 
 function stripFences(text: string): string {
@@ -28,9 +33,62 @@ function stripFences(text: string): string {
     .trim();
 }
 
+function isAuthError(err: unknown): boolean {
+  if (err instanceof Anthropic.AuthenticationError) return true;
+  if (err instanceof Anthropic.APIError && err.status === 401) return true;
+  if (err instanceof OpenAI.AuthenticationError) return true;
+  if (err instanceof OpenAI.APIError && err.status === 401) return true;
+  if (err instanceof Error && "status" in err) {
+    const s = (err as Error & { status: number }).status;
+    if (s === 401 || s === 403) return true;
+  }
+  return false;
+}
+
+async function callClaude(
+  apiKey: string,
+  model: string,
+  prompt: string
+): Promise<string> {
+  const client = new Anthropic({ apiKey });
+  const message = await client.messages.create({
+    model,
+    max_tokens: 1024,
+    messages: [{ role: "user", content: prompt }],
+  });
+  const block = message.content[0];
+  if (block.type !== "text") throw new Error("Unexpected response type from Claude");
+  return block.text;
+}
+
+async function callOpenAI(
+  apiKey: string,
+  model: string,
+  prompt: string
+): Promise<string> {
+  const client = new OpenAI({ apiKey });
+  const completion = await client.chat.completions.create({
+    model,
+    max_tokens: 1024,
+    messages: [{ role: "user", content: prompt }],
+  });
+  return completion.choices[0]?.message.content ?? "";
+}
+
+async function callGemini(
+  apiKey: string,
+  model: string,
+  prompt: string
+): Promise<string> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const geminiModel = genAI.getGenerativeModel({ model });
+  const result = await geminiModel.generateContent(prompt);
+  return result.response.text();
+}
+
 export async function POST(req: Request): Promise<NextResponse> {
-  const apiKey = req.headers.get("x-api-key");
-  if (!apiKey) {
+  const xApiKey = req.headers.get("x-api-key");
+  if (!xApiKey) {
     return NextResponse.json(
       { error: "Missing x-api-key header" },
       { status: 401 }
@@ -54,53 +112,45 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  const { owner, repo, issueNumber, issueTitle, issueBody, labels } =
+  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider } =
     body as AnalyzeRequestBody;
+
+  let modelOption;
+  try {
+    modelOption = getModel(provider);
+  } catch {
+    return NextResponse.json(
+      { error: `Unknown provider: ${provider}` },
+      { status: 400 }
+    );
+  }
 
   const prompt = `You are helping a junior developer contribute to the GitHub repo ${owner}/${repo}.
 Issue #${issueNumber}: ${issueTitle}
 Labels: ${labels}
 Description: ${issueBody.slice(0, 600)}
 
-Respond ONLY with a JSON object with two keys:
-- files: a bullet list (•) of 4-6 likely relevant files/directories with one-line reasons
-- plan: a numbered 5-step implementation plan written for a junior developer, specific to this issue`;
-
-  let anthropic: Anthropic;
-  try {
-    anthropic = new Anthropic({ apiKey });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to initialise Anthropic client" },
-      { status: 401 }
-    );
-  }
+Respond ONLY with valid JSON (no markdown fences) with exactly two keys:
+- files: bullet list (•) of 4-6 relevant files/dirs with one-line reasons each
+- plan: numbered 5-step plan written clearly for a junior developer`;
 
   let rawText: string;
   try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const block = message.content[0];
-    if (block.type !== "text") {
+    if (provider === "claude") {
+      rawText = await callClaude(xApiKey, modelOption.model, prompt);
+    } else if (provider === "openai") {
+      rawText = await callOpenAI(xApiKey, modelOption.model, prompt);
+    } else {
+      rawText = await callGemini(xApiKey, modelOption.model, prompt);
+    }
+  } catch (err) {
+    if (isAuthError(err)) {
       return NextResponse.json(
-        { error: "Unexpected response type from model" },
-        { status: 502 }
+        { error: "Invalid API key for selected provider." },
+        { status: 401 }
       );
     }
-    rawText = block.text;
-  } catch (err: unknown) {
-    const isAuthError =
-      err instanceof Anthropic.AuthenticationError ||
-      (err instanceof Anthropic.APIError && err.status === 401);
-
-    if (isAuthError) {
-      return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
-    }
-    const message = err instanceof Error ? err.message : "Anthropic API error";
+    const message = err instanceof Error ? err.message : "Provider API error";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
@@ -108,7 +158,6 @@ Respond ONLY with a JSON object with two keys:
     const parsed = JSON.parse(stripFences(rawText)) as ContributionPlan;
     return NextResponse.json(parsed);
   } catch {
-    // Return raw text under a known key so callers can still render it
-    return NextResponse.json({ files: "", plan: rawText });
+    return NextResponse.json({ files: rawText, plan: "" });
   }
 }

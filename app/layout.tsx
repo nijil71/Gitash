@@ -14,9 +14,14 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "OSS Contributor Agent",
+  title: "Gitash — OSS Contributor Agent",
   description:
-    "Find good first issues in any GitHub repository and get an AI-powered contribution plan tailored for junior developers.",
+    "Find good first issues in any GitHub repository and get an AI-powered contribution plan tailored for developers.",
+  icons: {
+    icon: [
+      { url: "/api/favicon", type: "image/svg+xml" },
+    ],
+  },
 };
 
 export default function RootLayout({
@@ -25,9 +30,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="dark h-full">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} h-full font-[family-name:var(--font-geist-sans)] antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} h-full font-sans antialiased`}
       >
         {children}
       </body>

@@ -2,26 +2,95 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Light mode — clean, high-contrast */
+    --background: 0 0% 98%;
+    --foreground: 222 47% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 8%;
+    --primary: 142 72% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 20% 93%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 215 20% 93%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 215 20% 93%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 142 72% 38%;
+    --radius: 0.625rem;
+    --chart-1: 142 72% 38%;
+    --chart-2: 221 83% 53%;
+    --chart-3: 262 83% 58%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 0 84% 58%;
+  }
+
+  .dark {
+    /* Dark mode — deep slate, developer-tool aesthetic */
+    --background: 222 47% 5%;
+    --foreground: 210 40% 96%;
+    --card: 217 33% 10%;
+    --card-foreground: 210 40% 96%;
+    --popover: 217 33% 10%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 142 72% 45%;
+    --primary-foreground: 222 47% 5%;
+    --secondary: 217 24% 16%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 24% 16%;
+    --muted-foreground: 215 20% 58%;
+    --accent: 217 24% 16%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 210 40% 96%;
+    --border: 217 24% 18%;
+    --input: 217 24% 18%;
+    --ring: 142 72% 45%;
+    --radius: 0.625rem;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 2px;
   }
 }

@@ -1,38 +1,61 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ContributionPlan as ContributionPlanData, GitHubIssue } from "@/types";
+import { ExternalLink, FileCode2, ListChecks, Bot } from "lucide-react";
+import type {
+  ContributionPlan as ContributionPlanData,
+  GitHubIssue,
+  ModelOption,
+} from "@/types";
 import LoadingSkeleton from "./LoadingSkeleton";
 import CopyButton from "./CopyButton";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 interface Props {
   issue: GitHubIssue;
   apiKey: string;
   owner: string;
   repo: string;
+  selectedModel: ModelOption;
 }
 
-function ExternalLinkIcon() {
+function ModelBadge({ model }: { model: ModelOption }) {
+  const [imgError, setImgError] = useState(false);
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      style={{
+        borderColor: `${model.color}44`,
+        color: model.color,
+        backgroundColor: `${model.color}15`,
+      }}
     >
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-      <polyline points="15 3 21 3 21 9" />
-      <line x1="10" y1="14" x2="21" y2="3" />
-    </svg>
+      {!imgError && (
+        <img
+          src={`/logos/${model.id}.svg`}
+          alt=""
+          width={10}
+          height={10}
+          className="flex-shrink-0 object-contain"
+          onError={() => setImgError(true)}
+        />
+      )}
+      {model.name}
+    </span>
   );
 }
 
-export default function ContributionPlan({ issue, apiKey, owner, repo }: Props) {
+export default function ContributionPlan({
+  issue,
+  apiKey,
+  owner,
+  repo,
+  selectedModel,
+}: Props) {
   const [plan, setPlan] = useState<ContributionPlanData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +81,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo }: Props) 
         issueTitle: issue.title,
         issueBody: issue.body ?? "",
         labels: labelNames,
+        provider: selectedModel.id,
       }),
     })
       .then(async (res) => {
@@ -76,90 +100,112 @@ export default function ContributionPlan({ issue, apiKey, owner, repo }: Props) 
         if (!cancelled) setLoading(false);
       });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [issue.number, owner, repo, apiKey]);
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issue.number, owner, repo, apiKey, selectedModel.id]);
 
   const markdownText = plan
     ? `## Issue #${issue.number}: ${issue.title}\n\n### Relevant Files\n${plan.files}\n\n### Implementation Plan\n${plan.plan}`
     : "";
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+    <div className="flex flex-col h-full rounded-xl border border-border bg-card overflow-hidden">
       {/* Header */}
-      <div className="mb-4 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-            Contribution Plan
-          </h2>
-          <p className="mt-0.5 truncate text-xs text-gray-400 dark:text-gray-500">
+      <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <Bot className="h-4 w-4 text-primary flex-shrink-0" />
+            <span className="text-sm font-semibold text-foreground">Contribution Plan</span>
+            <ModelBadge model={selectedModel} />
+          </div>
+          <p className="truncate text-xs text-muted-foreground font-mono">
             #{issue.number} · {issue.title}
           </p>
         </div>
+
         <div className="flex flex-shrink-0 items-center gap-1.5">
-          <a
-            href={issue.html_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-          >
-            <ExternalLinkIcon />
-            GitHub
-          </a>
+          <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+            <a href={issue.html_url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-3.5 w-3.5" />
+              GitHub
+            </a>
+          </Button>
           {plan && <CopyButton text={markdownText} label="Copy plan" />}
         </div>
       </div>
 
-      {loading && <LoadingSkeleton />}
+      {/* Body */}
+      <ScrollArea className="flex-1">
+        <div className="p-5">
+          {loading && <LoadingSkeleton />}
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800/60 dark:bg-red-950/40 dark:text-red-300">
-          {error}
-        </div>
-      )}
+          {error && (
+            <Alert variant="destructive" className="animate-fade-in">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-      {plan && !loading && (
-        <div className="space-y-5">
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Relevant Files
-            </h3>
-            <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-              {plan.files
-                .split("\n")
-                .filter(Boolean)
-                .map((line, i) => (
-                  <p
-                    key={i}
-                    className="py-0.5 text-sm leading-relaxed text-gray-700 dark:text-gray-300"
-                  >
-                    {line}
-                  </p>
-                ))}
+          {plan && !loading && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Relevant Files */}
+              <section>
+                <div className="flex items-center gap-2 mb-3">
+                  <FileCode2 className="h-4 w-4 text-primary" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Relevant Files
+                  </h3>
+                </div>
+                <div className="rounded-lg border border-border bg-secondary/30 divide-y divide-border overflow-hidden">
+                  {plan.files
+                    .split("\n")
+                    .filter(Boolean)
+                    .map((line, i) => (
+                      <p
+                        key={i}
+                        className="px-3 py-2 text-sm font-mono text-foreground/90 leading-relaxed"
+                      >
+                        {line}
+                      </p>
+                    ))}
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* Step-by-step Plan */}
+              <section>
+                <div className="flex items-center gap-2 mb-3">
+                  <ListChecks className="h-4 w-4 text-primary" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Step-by-step Plan
+                  </h3>
+                </div>
+                <div className="space-y-2">
+                  {plan.plan
+                    .split("\n")
+                    .filter(Boolean)
+                    .map((line, i) => {
+                      const isNumbered = /^\d+[\.\)]/.test(line.trim());
+                      return (
+                        <div
+                          key={i}
+                          className={cn(
+                            "rounded-lg px-3 py-2 text-sm leading-relaxed text-foreground/90",
+                            isNumbered
+                              ? "bg-secondary/30 border border-border"
+                              : "text-muted-foreground pl-5"
+                          )}
+                        >
+                          {line}
+                        </div>
+                      );
+                    })}
+                </div>
+              </section>
             </div>
-          </section>
-
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Step-by-step Plan
-            </h3>
-            <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-              {plan.plan
-                .split("\n")
-                .filter(Boolean)
-                .map((line, i) => (
-                  <p
-                    key={i}
-                    className="py-0.5 text-sm leading-relaxed text-gray-700 dark:text-gray-300"
-                  >
-                    {line}
-                  </p>
-                ))}
-            </div>
-          </section>
+          )}
         </div>
-      )}
+      </ScrollArea>
     </div>
   );
 }

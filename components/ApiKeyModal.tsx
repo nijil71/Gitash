@@ -1,117 +1,172 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Eye, EyeOff, ExternalLink, KeyRound } from "lucide-react";
+import type { ModelOption, ModelProvider } from "@/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onSave: (key: string) => void;
+  selectedModel: ModelOption;
 }
 
-function EyeIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
+const PROVIDER_LINKS: Record<ModelProvider, { label: string; url: string; placeholder: string }> = {
+  claude: {
+    label: "Get a key at console.anthropic.com",
+    url: "https://console.anthropic.com/",
+    placeholder: "sk-ant-api03-...",
+  },
+  openai: {
+    label: "Get a key at platform.openai.com",
+    url: "https://platform.openai.com/api-keys",
+    placeholder: "sk-proj-...",
+  },
+  gemini: {
+    label: "Get a key at aistudio.google.com",
+    url: "https://aistudio.google.com/app/apikey",
+    placeholder: "AIzaSy...",
+  },
+};
+
+export function getStoredKey(provider: ModelProvider): string | null {
+  if (typeof window === "undefined") return null;
+  const key = localStorage.getItem(`api_key_${provider}`);
+  if (!key && provider === "claude") {
+    const legacy = localStorage.getItem("anthropic_api_key");
+    if (legacy) {
+      localStorage.setItem("api_key_claude", legacy);
+      return legacy;
+    }
+  }
+  return key;
 }
 
-function EyeOffIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-      <line x1="1" y1="1" x2="23" y2="23" />
-    </svg>
-  );
-}
-
-export default function ApiKeyModal({ isOpen, onClose, onSave }: Props) {
+export default function ApiKeyModal({ isOpen, onClose, onSave, selectedModel }: Props) {
   const [key, setKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const info = PROVIDER_LINKS[selectedModel.id];
 
   useEffect(() => {
     if (!isOpen) return;
-    const saved = localStorage.getItem("anthropic_api_key");
-    if (saved) setKey(saved);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleEsc);
-    return () => window.removeEventListener("keydown", handleEsc);
-  }, [isOpen, onClose]);
+    setShowKey(false);
+    const saved = getStoredKey(selectedModel.id);
+    setKey(saved ?? "");
+  }, [isOpen, selectedModel.id]);
 
   const handleSave = () => {
     const trimmed = key.trim();
-    localStorage.setItem("anthropic_api_key", trimmed);
+    localStorage.setItem(`api_key_${selectedModel.id}`, trimmed);
+    localStorage.setItem("last_provider", selectedModel.id);
     onSave(trimmed);
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="mb-1 text-lg font-semibold text-gray-900">
-          Anthropic API Key
-        </h2>
-        <p className="mb-4 text-sm text-gray-500">
-          Required to generate contribution plans via Claude.
-        </p>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-1">
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-lg"
+              style={{ backgroundColor: `${selectedModel.color}22` }}
+            >
+              <img
+                src={`/logos/${selectedModel.id}.svg`}
+                alt={selectedModel.name}
+                width={20}
+                height={20}
+                className="flex-shrink-0"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+            <div>
+              <DialogTitle className="text-base">
+                {selectedModel.name} API Key
+              </DialogTitle>
+              <DialogDescription className="text-xs mt-0.5">
+                Required to generate contribution plans via {selectedModel.description}
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
 
-        <div className="relative mb-3">
-          <input
-            type={showKey ? "text" : "password"}
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && key.trim() && handleSave()}
-            placeholder="sk-ant-..."
-            autoFocus
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey((v) => !v)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            aria-label={showKey ? "Hide key" : "Show key"}
-          >
-            {showKey ? <EyeOffIcon /> : <EyeIcon />}
-          </button>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="api-key-input" className="text-xs text-muted-foreground">
+              API Key
+            </Label>
+            <div className="relative">
+              <Input
+                id="api-key-input"
+                type={showKey ? "text" : "password"}
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && key.trim() && handleSave()}
+                placeholder={info.placeholder}
+                autoFocus
+                className={cn(
+                  "pr-10 font-mono text-sm bg-secondary/50",
+                )}
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                aria-label={showKey ? "Hide key" : "Show key"}
+              >
+                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-secondary/50 px-3 py-2.5 space-y-1">
+            <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+              <KeyRound className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-primary" />
+              Your key is stored only in your browser and sent directly to{" "}
+              {selectedModel.description} — never to our servers.
+            </p>
+            <a
+              href={info.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              {info.label}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
         </div>
 
-        <p className="mb-5 text-xs text-gray-400">
-          Your key is stored in your browser only and never sent to our servers
-          — only directly to Anthropic.
-        </p>
-
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
-          >
+        <DialogFooter className="gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
             onClick={handleSave}
             disabled={!key.trim()}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: selectedModel.color, color: "#fff" }}
+            className="hover:opacity-90 transition-opacity"
           >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
+            Save Key
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

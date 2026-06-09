@@ -18,3 +18,13 @@ export interface ContributionPlan {
   files: string;
   plan: string;
 }
+
+export type ModelProvider = "claude" | "openai" | "gemini";
+
+export interface ModelOption {
+  id: ModelProvider;
+  name: string;
+  model: string;
+  description: string;
+  color: string;
+}
