@@ -13,12 +13,9 @@
 
 ---
 
-## Screenshots
+## Screenshot
 
-<!-- Replace this with a real screenshot or GIF: drop the file in docs/ and use
-     ![Gitash](docs/preview.png) -->
-
-> 📸 _Try it live at **[gitash.space](https://www.gitash.space)**. (Add a screenshot or short GIF here — save it under `docs/` and reference it above.)_
+![Gitash](docs/image.png)
 
 ---
 
