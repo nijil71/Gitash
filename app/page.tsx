@@ -212,7 +212,7 @@ export default function Home() {
 
   const [repoMeta, setRepoMeta] = useState<RepoMeta | null>(null);
   const [labels, setLabels] = useState<GitHubLabel[]>([]);
-  const [activeLabel, setActiveLabel] = useState("");
+  const [activeLabels, setActiveLabels] = useState<string[]>([]);
   const [issues, setIssues] = useState<GitHubIssue[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<GitHubIssue | null>(null);
   const [loading, setLoading] = useState(false);
@@ -280,7 +280,7 @@ export default function Home() {
     setLabels([]);
     setIssues([]);
     setSelectedIssue(null);
-    setActiveLabel("");
+    setActiveLabels([]);
 
     try {
       const [meta, fetchedLabels] = await Promise.all([
@@ -290,16 +290,16 @@ export default function Home() {
       setRepoMeta({ owner, repo, ...meta });
       setLabels(fetchedLabels);
 
-      const defaultLabel =
-        fetchedLabels.find((l) => /good.first.issue|beginner|starter/i.test(l.name))?.name ??
-        fetchedLabels[0]?.name ??
-        "";
-      setActiveLabel(defaultLabel);
+      const defaultLabel = fetchedLabels.find((l) =>
+        /good.first.issue|beginner|starter/i.test(l.name)
+      )?.name;
+      const initialLabels = defaultLabel ? [defaultLabel] : [];
+      setActiveLabels(initialLabels);
 
       const initialIssues = await fetchIssues(
         owner,
         repo,
-        defaultLabel || undefined,
+        initialLabels.length ? initialLabels.join(",") : undefined,
         githubToken || undefined
       );
       setIssues(initialIssues);
@@ -310,9 +310,16 @@ export default function Home() {
     }
   };
 
-  const handleLabelChange = async (label: string) => {
+  // Toggle a label on/off. Passing "" clears all (the "All" pill).
+  const handleLabelToggle = async (label: string) => {
     if (!repoMeta) return;
-    setActiveLabel(label);
+    const next = label === ""
+      ? []
+      : activeLabels.includes(label)
+        ? activeLabels.filter((l) => l !== label)
+        : [...activeLabels, label];
+
+    setActiveLabels(next);
     setSelectedIssue(null);
     setLoading(true);
     setError(null);
@@ -320,7 +327,7 @@ export default function Home() {
       const filtered = await fetchIssues(
         repoMeta.owner,
         repoMeta.repo,
-        label || undefined,
+        next.length ? next.join(",") : undefined,
         githubToken || undefined
       );
       setIssues(filtered);
@@ -442,7 +449,7 @@ export default function Home() {
             </div>
 
             {labels.length > 0 && (
-              <LabelFilter labels={labels} activeLabel={activeLabel} onChange={handleLabelChange} />
+              <LabelFilter labels={labels} activeLabels={activeLabels} onToggle={handleLabelToggle} />
             )}
 
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
