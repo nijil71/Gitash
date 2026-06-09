@@ -22,6 +22,8 @@ export interface GitHubIssue {
   created_at: string;
   updated_at: string;
   user: GitHubUser | null;
+  assignees: GitHubUser[];
+  reactions?: { total_count: number } | null;
 }
 
 export type PlanDifficulty = "beginner" | "intermediate" | "advanced" | "";

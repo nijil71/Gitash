@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, MessageSquare, Bookmark } from "lucide-react";
+import { ExternalLink, MessageSquare, Bookmark, UserCheck, Smile } from "lucide-react";
 import type { GitHubIssue } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -66,12 +66,29 @@ export default function IssueCard({ issue, selected, onClick, bookmarked, onTogg
                 <span>{timeAgo(issue.created_at)}</span>
               </>
             )}
-            {issue.comments > 0 && (
-              <span className="ml-auto inline-flex items-center gap-1 text-muted-foreground/80">
-                <MessageSquare className="h-3 w-3" />
-                {issue.comments}
+            {issue.assignees && issue.assignees.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-amber-500"
+                title={`Assigned to ${issue.assignees.map((a) => a.login).join(", ")} — someone may already be working on this`}
+              >
+                <UserCheck className="h-3 w-3" />
+                {issue.assignees.length > 1 ? `assigned ${issue.assignees.length}` : "assigned"}
               </span>
             )}
+            <span className="ml-auto flex items-center gap-2 text-muted-foreground/80">
+              {issue.reactions && issue.reactions.total_count > 0 && (
+                <span className="inline-flex items-center gap-1" title="Reactions">
+                  <Smile className="h-3 w-3" />
+                  {issue.reactions.total_count}
+                </span>
+              )}
+              {issue.comments > 0 && (
+                <span className="inline-flex items-center gap-1" title="Comments">
+                  <MessageSquare className="h-3 w-3" />
+                  {issue.comments}
+                </span>
+              )}
+            </span>
           </div>
 
           <p
