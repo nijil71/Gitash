@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, MessageSquare } from "lucide-react";
+import { ExternalLink, MessageSquare, Bookmark } from "lucide-react";
 import type { GitHubIssue } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,8 @@ interface Props {
   issue: GitHubIssue;
   selected: boolean;
   onClick: () => void;
+  bookmarked?: boolean;
+  onToggleBookmark?: () => void;
 }
 
 function timeAgo(iso: string): string {
@@ -31,7 +33,7 @@ function timeAgo(iso: string): string {
   return "";
 }
 
-export default function IssueCard({ issue, selected, onClick }: Props) {
+export default function IssueCard({ issue, selected, onClick, bookmarked, onToggleBookmark }: Props) {
   return (
     <div
       onClick={onClick}
@@ -99,16 +101,37 @@ export default function IssueCard({ issue, selected, onClick }: Props) {
           )}
         </div>
 
-        <a
-          href={issue.html_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="mt-0.5 flex-shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer"
-          aria-label="Open issue on GitHub"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+        <div className="mt-0.5 flex flex-shrink-0 items-center gap-1.5">
+          {onToggleBookmark && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleBookmark();
+              }}
+              className={cn(
+                "transition-colors cursor-pointer",
+                bookmarked
+                  ? "text-amber-500"
+                  : "text-muted-foreground/40 hover:text-muted-foreground"
+              )}
+              aria-label={bookmarked ? "Remove bookmark" : "Bookmark issue"}
+              aria-pressed={bookmarked}
+              title={bookmarked ? "Remove bookmark" : "Bookmark issue"}
+            >
+              <Bookmark className={cn("h-3.5 w-3.5", bookmarked && "fill-amber-500")} />
+            </button>
+          )}
+          <a
+            href={issue.html_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer"
+            aria-label="Open issue on GitHub"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import {
   ExternalLink,
   GitBranch,
   Clock3,
+  Bookmark,
 } from "lucide-react";
 import { GitashIcon } from "@/components/GitashIcon";
 import ApiKeyModal, { getStoredKey } from "@/components/ApiKeyModal";
@@ -34,6 +35,12 @@ import {
 } from "@/lib/github";
 import { MODEL_OPTIONS, getModel } from "@/lib/models";
 import { getRecentRepos, addRecentRepo, type RecentRepo } from "@/lib/recentRepos";
+import {
+  getBookmarks,
+  toggleBookmark,
+  bookmarkKey,
+  type SavedIssue,
+} from "@/lib/bookmarks";
 import type { GitHubIssue, GitHubLabel, ModelOption, ModelProvider } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -260,9 +267,25 @@ export default function Home() {
   const [hasMore, setHasMore] = useState(false);
 
   const [recentRepos, setRecentRepos] = useState<RecentRepo[]>([]);
+  const [bookmarks, setBookmarks] = useState<SavedIssue[]>([]);
+  const [savedOnly, setSavedOnly] = useState(false);
   useEffect(() => {
     setRecentRepos(getRecentRepos());
+    setBookmarks(getBookmarks());
   }, []);
+
+  const handleToggleBookmark = (issue: GitHubIssue) => {
+    if (!repoMeta) return;
+    setBookmarks(
+      toggleBookmark({
+        owner: repoMeta.owner,
+        repo: repoMeta.repo,
+        number: issue.number,
+        title: issue.title,
+        html_url: issue.html_url,
+      })
+    );
+  };
 
   // On narrow screens the plan renders below the issue list — scroll to it
   // when an issue is selected so the user isn't left looking at the list.
@@ -464,7 +487,18 @@ export default function Home() {
     );
   }
 
-  const visibleIssues = filterIssues(issues, search);
+  const bookmarkedNumbers = new Set(
+    repoMeta
+      ? bookmarks
+          .filter((b) => b.owner === repoMeta.owner && b.repo === repoMeta.repo)
+          .map((b) => b.number)
+      : []
+  );
+
+  const searched = filterIssues(issues, search);
+  const visibleIssues = savedOnly
+    ? searched.filter((i) => bookmarkedNumbers.has(i.number))
+    : searched;
 
   // Main app
   return (
@@ -566,15 +600,32 @@ export default function Home() {
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               {/* Left: Issue list */}
               <div>
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-3 flex items-center justify-between gap-2">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Open Issues
                   </h2>
-                  {issues.length > 0 && (
-                    <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      {search ? `${visibleIssues.length} / ${issues.length}` : issues.length}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {bookmarkedNumbers.size > 0 && (
+                      <button
+                        onClick={() => setSavedOnly((v) => !v)}
+                        aria-pressed={savedOnly}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors cursor-pointer",
+                          savedOnly
+                            ? "bg-amber-400/15 text-amber-500 ring-1 ring-amber-400/40"
+                            : "bg-secondary text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Bookmark className={cn("h-3 w-3", savedOnly && "fill-amber-500")} />
+                        Saved {bookmarkedNumbers.size}
+                      </button>
+                    )}
+                    {issues.length > 0 && (
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                        {search || savedOnly ? `${visibleIssues.length} / ${issues.length}` : issues.length}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="mb-3">
                   <IssueControls
@@ -590,10 +641,12 @@ export default function Home() {
                     issues={visibleIssues}
                     selectedIssue={selectedIssue}
                     onSelect={setSelectedIssue}
-                    hasMore={hasMore && !search}
+                    hasMore={hasMore && !search && !savedOnly}
                     loadingMore={loadingMore}
                     onLoadMore={handleLoadMore}
-                    filtered={Boolean(search) && issues.length > 0}
+                    filtered={(Boolean(search) || savedOnly) && issues.length > 0}
+                    bookmarkedNumbers={bookmarkedNumbers}
+                    onToggleBookmark={handleToggleBookmark}
                   />
                 </div>
               </div>
@@ -692,8 +745,35 @@ export default function Home() {
               </div>
             )}
 
+            {bookmarks.length > 0 && (
+              <div className="w-full max-w-sm">
+                <p className="mb-2 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  <Bookmark className="h-3 w-3 fill-amber-500 text-amber-500" />
+                  Saved issues
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {bookmarks.slice(0, 6).map((b) => (
+                    <button
+                      key={bookmarkKey(b.owner, b.repo, b.number)}
+                      onClick={() => handleAnalyze(b.owner, b.repo)}
+                      title={`Open ${b.owner}/${b.repo}`}
+                      className="group flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-secondary/40 cursor-pointer"
+                    >
+                      <Bookmark className="h-3 w-3 flex-shrink-0 fill-amber-500 text-amber-500" />
+                      <span className="min-w-0 flex-1 truncate text-xs text-foreground/90">
+                        {b.title}
+                      </span>
+                      <span className="flex-shrink-0 font-mono text-[10px] text-muted-foreground">
+                        {b.owner}/{b.repo}#{b.number}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="w-full max-w-sm">
-              {recentRepos.length > 0 && (
+              {(recentRepos.length > 0 || bookmarks.length > 0) && (
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                   Try an example
                 </p>

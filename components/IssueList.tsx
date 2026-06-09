@@ -15,6 +15,8 @@ interface Props {
   onLoadMore?: () => void;
   /** True when the empty list is the result of a client-side search filter. */
   filtered?: boolean;
+  bookmarkedNumbers?: Set<number>;
+  onToggleBookmark?: (issue: GitHubIssue) => void;
 }
 
 export default function IssueList({
@@ -25,6 +27,8 @@ export default function IssueList({
   loadingMore,
   onLoadMore,
   filtered,
+  bookmarkedNumbers,
+  onToggleBookmark,
 }: Props) {
   if (issues.length === 0) {
     return (
@@ -59,6 +63,8 @@ export default function IssueList({
             issue={issue}
             selected={selectedIssue?.number === issue.number}
             onClick={() => onSelect(issue)}
+            bookmarked={bookmarkedNumbers?.has(issue.number) ?? false}
+            onToggleBookmark={onToggleBookmark ? () => onToggleBookmark(issue) : undefined}
           />
         ))}
 
