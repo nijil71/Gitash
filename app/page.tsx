@@ -13,6 +13,7 @@ import {
 import { GitashIcon } from "@/components/GitashIcon";
 import ApiKeyModal, { getStoredKey } from "@/components/ApiKeyModal";
 import GitHubTokenModal, { getStoredGitHubToken } from "@/components/GitHubTokenModal";
+import ThemeToggle from "@/components/ThemeToggle";
 import ModelSelector from "@/components/ModelSelector";
 import RepoInput from "@/components/RepoInput";
 import LabelFilter from "@/components/LabelFilter";
@@ -154,9 +155,12 @@ function SetupScreen({
     <div className="flex min-h-screen flex-col bg-background">
       {/* Minimal header */}
       <header className="border-b border-border px-6 py-4">
-        <div className="mx-auto flex max-w-4xl items-center gap-2.5">
-          <GitashIcon size={28} />
-          <span className="text-sm font-semibold text-foreground tracking-tight">Gitash</span>
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <GitashIcon size={28} />
+            <span className="text-sm font-semibold text-foreground tracking-tight">Gitash</span>
+          </div>
+          <ThemeToggle />
         </div>
       </header>
 
@@ -487,6 +491,7 @@ export default function Home() {
               <KeyRound className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{apiKey ? "Key saved" : "Set API key"}</span>
             </Button>
+            <ThemeToggle />
           </div>
         </div>
       </header>
