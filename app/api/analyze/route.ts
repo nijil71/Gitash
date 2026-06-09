@@ -22,6 +22,11 @@ function cacheSet(key: string, value: ContributionPlan) {
 // ── Request timeout ────────────────────────────────────────────────────────
 const TIMEOUT_MS = 25_000; // 25 s — under Vercel Hobby's 30 s function limit
 
+// Headroom for the response. The richer prompt (file tree + comments) yields
+// longer file lists and plans; too low a cap truncates the JSON mid-object and
+// breaks parsing.
+const MAX_OUTPUT_TOKENS = 2000;
+
 // ── Types ──────────────────────────────────────────────────────────────────
 interface AnalyzeRequestBody {
   owner: string;
@@ -46,6 +51,34 @@ function stripFences(text: string): string {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
+}
+
+// Models occasionally wrap JSON in prose or fences. Pull out the outermost
+// {...} object so a stray prefix/suffix doesn't break JSON.parse.
+function extractJsonObject(text: string): string {
+  const stripped = stripFences(text);
+  const first = stripped.indexOf("{");
+  const last = stripped.lastIndexOf("}");
+  if (first !== -1 && last > first) return stripped.slice(first, last + 1);
+  return stripped;
+}
+
+// Last-resort salvage for truncated/invalid JSON: pull the "files" and "plan"
+// string values out directly so the user still gets a usable plan.
+function salvageFields(text: string): { files: string; plan: string } | null {
+  const grab = (key: string): string => {
+    const m = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)`, "i"));
+    if (!m) return "";
+    try {
+      // Re-wrap and parse to decode escapes (\n, \", …) even if unterminated.
+      return JSON.parse(`"${m[1]}"`) as string;
+    } catch {
+      return m[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
+    }
+  };
+  const files = grab("files");
+  const plan = grab("plan");
+  return files || plan ? { files, plan } : null;
 }
 
 function toStr(v: unknown): string {
@@ -130,7 +163,7 @@ async function callClaude(
   const message = await client.messages.create(
     {
       model,
-      max_tokens: 700,
+      max_tokens: MAX_OUTPUT_TOKENS,
       temperature: 0.2,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userPrompt }],
@@ -152,7 +185,7 @@ async function callOpenAI(
   const completion = await client.chat.completions.create(
     {
       model,
-      max_tokens: 700,
+      max_tokens: MAX_OUTPUT_TOKENS,
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -177,7 +210,7 @@ async function callGemini(
     systemInstruction: SYSTEM_PROMPT,
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 700,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
       responseMimeType: "application/json",
     },
   });
@@ -277,7 +310,7 @@ async function handlePost(req: Request): Promise<NextResponse> {
   }
 
   try {
-    const parsed = JSON.parse(stripFences(rawText)) as Record<string, unknown>;
+    const parsed = JSON.parse(extractJsonObject(rawText)) as Record<string, unknown>;
     const result: ContributionPlan = {
       files: toStr(parsed.files),
       plan: toStr(parsed.plan),
@@ -285,6 +318,15 @@ async function handlePost(req: Request): Promise<NextResponse> {
     cacheSet(cacheKey, result);
     return NextResponse.json(result);
   } catch {
-    return NextResponse.json({ files: rawText, plan: "" });
+    // Truncated or malformed JSON — try to salvage the two fields directly
+    // rather than dumping the raw JSON braces into the files panel.
+    const salvaged = salvageFields(rawText);
+    if (salvaged && (salvaged.files || salvaged.plan)) {
+      return NextResponse.json(salvaged);
+    }
+    return NextResponse.json(
+      { error: "The model returned an unparseable response. Please try again." },
+      { status: 502 }
+    );
   }
 }
