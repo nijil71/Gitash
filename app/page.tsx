@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Star,
   KeyRound,
@@ -256,6 +256,16 @@ export default function Home() {
   const [sortKey, setSortKey] = useState(SORT_OPTIONS[0].key);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+
+  // On narrow screens the plan renders below the issue list — scroll to it
+  // when an issue is selected so the user isn't left looking at the list.
+  const planRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!selectedIssue) return;
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(min-width: 1024px)").matches) return;
+    planRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [selectedIssue]);
 
   useEffect(() => {
     // Restore GitHub token (independent of AI provider)
@@ -580,8 +590,11 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Right: Contribution plan — sticky, viewport-height */}
-              <div className="lg:sticky lg:top-[61px] lg:h-[calc(100vh-80px)] flex flex-col">
+              {/* Right: Contribution plan — sticky on desktop, fixed-height on mobile */}
+              <div
+                ref={planRef}
+                className="flex flex-col scroll-mt-20 lg:sticky lg:top-[61px] lg:h-[calc(100vh-80px)]"
+              >
                 <div className="mb-3 flex-shrink-0">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Contribution Plan
@@ -590,7 +603,7 @@ export default function Home() {
 
                 {selectedIssue && apiKey ? (
                   <ContributionPlanPanel
-                    className="flex-1 min-h-0"
+                    className="flex-1 min-h-0 h-[80vh] lg:h-auto"
                     key={`${repoMeta.owner}/${repoMeta.repo}#${selectedIssue.number}@${selectedModel.id}`}
                     issue={selectedIssue}
                     apiKey={apiKey}
