@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Skip major version bumps — they often carry breaking changes and need a
+    # deliberate migration (e.g. Next/React). Handle those manually.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       # Batch minor/patch bumps into a single PR to reduce noise.
       minor-and-patch:
