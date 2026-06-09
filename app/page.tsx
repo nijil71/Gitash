@@ -161,7 +161,7 @@ function SetupScreen({
   onSkip: () => void;
 }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col">
       {/* Minimal header */}
       <header className="border-b border-border px-6 py-4">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-2.5">
@@ -574,7 +574,7 @@ export default function Home() {
 
   // Main app
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
@@ -693,8 +693,8 @@ export default function Home() {
                       </button>
                     )}
                     {issues.length > 0 && (
-                      <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                        {search || savedOnly ? `${visibleIssues.length} / ${issues.length}` : issues.length}
+                      <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-secondary px-1.5 text-[11px] font-semibold text-muted-foreground tabular-nums">
+                        {search || savedOnly ? `${visibleIssues.length}/${issues.length}` : issues.length}
                       </span>
                     )}
                   </div>

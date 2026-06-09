@@ -72,7 +72,7 @@ function ModelBadge({ model }: { model: ModelOption }) {
   const [imgError, setImgError] = useState(false);
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+      className="inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium"
       style={{
         borderColor: `${model.color}44`,
         color: model.color,
@@ -83,8 +83,8 @@ function ModelBadge({ model }: { model: ModelOption }) {
         <img
           src={`/logos/${model.id}.svg`}
           alt=""
-          width={10}
-          height={10}
+          width={12}
+          height={12}
           className="flex-shrink-0 object-contain"
           onError={() => setImgError(true)}
         />
@@ -473,12 +473,11 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
       {/* ── Panel header ── */}
       <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border flex-shrink-0">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <Bot className="h-4 w-4 text-primary flex-shrink-0" />
-            <span className="text-sm font-semibold text-foreground">Contribution Plan</span>
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+            <Bot className="h-4 w-4 flex-shrink-0 text-primary" />
             <ModelBadge model={selectedModel} />
             {streaming && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+              <span className="inline-flex flex-shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-primary">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                 Generating…
               </span>
@@ -531,7 +530,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
               <Download className="h-3.5 w-3.5" />
             </Button>
           )}
-          {plan && <CopyButton text={markdownText} label="Copy plan" />}
+          {plan && <CopyButton text={markdownText} label="Copy" />}
         </div>
       </div>
 
@@ -557,7 +556,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
                 <span>{label}</span>
                 <span
                   className={cn(
-                    "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                    "inline-flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
                     isActive ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"
                   )}
                 >
