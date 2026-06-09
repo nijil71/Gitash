@@ -1,12 +1,24 @@
 # Gitash
 
-> Browse any public GitHub repository, filter open issues, and get a step-by-step AI contribution plan — powered by Claude, GPT-4o, or Gemini.
+> Browse any public GitHub repository, filter open issues, and get a step-by-step AI contribution plan — powered by Claude, GPT, or Gemini.
+
+**[Live demo → gitash.space](https://www.gitash.space)**
 
 ![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-3-38bdf8?logo=tailwindcss&logoColor=white)
 ![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-latest-black?logo=shadcnui&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/nijil71/Gitash)
+
+---
+
+## Screenshots
+
+<!-- Replace this with a real screenshot or GIF: drop the file in docs/ and use
+     ![Gitash](docs/preview.png) -->
+
+> 📸 _Try it live at **[gitash.space](https://www.gitash.space)**. (Add a screenshot or short GIF here — save it under `docs/` and reference it above.)_
 
 ---
 
@@ -14,11 +26,13 @@
 
 - **Browse any public GitHub repo** — paste a full URL or `owner/repo` shorthand
 - **Filter, search & sort** — combine multiple labels, search loaded issues, sort by newest / recently updated / most commented, and page through results
-- **Pick your AI** — choose between Claude (Anthropic), GPT-4o (OpenAI), or Gemini 2.0 Flash (Google)
+- **Pick your AI** — choose between Claude (Anthropic), GPT (OpenAI), or Gemini (Google)
 - **Context-grounded plans** — the AI sees the repo's real file tree and the issue discussion, so file suggestions point at files that actually exist
-- **Actionable output** — every plan suggests a branch name and one-click Fork / web-editor / Open-PR links
-- **Copy-ready Markdown** — export the full plan in one click
+- **Streaming, structured plans** — summary, difficulty + effort estimate, prerequisites, relevant files, step-by-step guide, testing notes, and gotchas, streamed in live
+- **Actionable output** — every plan suggests a branch name and one-click Fork / web-editor / Open-PR links; copy or download as Markdown
+- **Stay organized** — bookmark issues, revisit recent repos, and navigate the list by keyboard (`/` to search, ↑/↓ to move)
 - **Higher rate limits** — add a GitHub token in-app to go from 60 to 5,000 req/hr (and reach private repos)
+- **Monochrome theme** with a light/dark toggle
 - **Privacy-first** — your AI key and GitHub token live only in your browser (`localStorage`), sent directly to the provider, never through our server
 
 ---
@@ -35,8 +49,9 @@
         ├── issue context (title, body, labels, repo)
         ├── fileTree (filtered list of the repo's real source paths)
         └── comments (the issue discussion, fetched from GitHub)
-                └── AI returns { files, plan } as JSON
-                        └── Rendered in the contribution panel
+                └── AI streams a structured plan (summary, difficulty,
+                    files, steps, testing, gotchas…)
+                        └── Parsed and rendered live in the contribution panel
 ```
 
 The route handler at [`app/api/analyze/route.ts`](app/api/analyze/route.ts) dispatches to the selected provider using your key from the request header. Nothing is logged or stored server-side.
@@ -48,7 +63,7 @@ The route handler at [`app/api/analyze/route.ts`](app/api/analyze/route.ts) disp
 ```bash
 # 1. Clone
 git clone https://github.com/nijil71/Gitash
-cd Gitash/oss-contributor-agent
+cd Gitash
 
 # 2. Install dependencies
 npm install
@@ -56,6 +71,8 @@ npm install
 # 3. Start the dev server
 npm run dev
 ```
+
+Requires **Node.js 18.17+**.
 
 Open [http://localhost:3000](http://localhost:3000) — you'll be greeted by the provider selection screen.
 
@@ -68,8 +85,8 @@ On first visit, Gitash shows a setup screen with three provider cards. Click the
 | Provider | Where to get a key | Key format |
 |---|---|---|
 | **Claude** (Anthropic) | [console.anthropic.com](https://console.anthropic.com/) | `sk-ant-...` |
-| **GPT-4o** (OpenAI) | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | `sk-proj-...` |
-| **Gemini 2.0** (Google) | [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) | `AIzaSy...` |
+| **GPT** (OpenAI) | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | `sk-proj-...` |
+| **Gemini** (Google) | [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) | `AIzaSy...` |
 
 You can switch providers at any time from the header — each provider's key is stored independently.
 
@@ -95,30 +112,36 @@ You can switch providers at any time from the header — each provider's key is 
 ## Project structure
 
 ```
-oss-contributor-agent/
+.
 ├── app/
 │   ├── api/
-│   │   ├── analyze/route.ts   # AI provider dispatch
+│   │   ├── analyze/route.ts   # AI provider dispatch (streaming)
 │   │   └── favicon/route.ts   # SVG favicon route
-│   ├── globals.css            # Tailwind + shadcn CSS variables
-│   ├── layout.tsx
+│   ├── globals.css            # Tailwind + theme CSS variables
+│   ├── layout.tsx             # Root layout + no-FOUC theme script
 │   └── page.tsx               # Main app + setup screen
 ├── components/
 │   ├── ui/                    # shadcn primitives
 │   ├── ApiKeyModal.tsx
-│   ├── ContributionPlan.tsx
+│   ├── GitHubTokenModal.tsx   # Optional PAT for higher rate limits
+│   ├── ContributionPlan.tsx   # Streaming plan panel
 │   ├── CopyButton.tsx
 │   ├── GitashIcon.tsx         # Custom SVG logo component
 │   ├── IssueCard.tsx
+│   ├── IssueControls.tsx      # Search + sort bar
 │   ├── IssueList.tsx
 │   ├── LabelFilter.tsx
 │   ├── LoadingSkeleton.tsx
 │   ├── ModelSelector.tsx
-│   └── RepoInput.tsx
+│   ├── RepoInput.tsx
+│   └── ThemeToggle.tsx
 ├── lib/
 │   ├── github.ts              # GitHub API client
 │   ├── models.ts              # Provider config
 │   ├── parseRepo.ts           # URL parser
+│   ├── planParse.ts           # Tolerant/streaming plan parser
+│   ├── recentRepos.ts         # Recent-repo history (localStorage)
+│   ├── bookmarks.ts           # Saved issues (localStorage)
 │   └── utils.ts               # cn() helper
 ├── public/logos/              # Provider SVG logos
 └── types/index.ts
@@ -151,4 +174,8 @@ Found a bug or want a new feature? Open an issue — then use **this very tool**
 Please keep PRs focused — one feature or fix per PR.
 
 ---
+
+## License
+
+[MIT](LICENSE) © [nijil71](https://github.com/nijil71)
 
