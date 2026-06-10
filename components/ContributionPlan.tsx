@@ -19,6 +19,7 @@ import {
   Download,
   Square,
   Sparkles,
+  HardDrive,
 } from "lucide-react";
 import type {
   ContributionPlan as ContributionPlanData,
@@ -28,6 +29,7 @@ import type {
 } from "@/types";
 import { fetchIssueComments } from "@/lib/github";
 import { parsePlan } from "@/lib/planParse";
+import { getCachedPlan, savePlan, planKey } from "@/lib/planHistory";
 import AIThinking, { SectionChips, type PlanSectionStatus } from "./AIThinking";
 import CopyButton from "./CopyButton";
 import { Button } from "@/components/ui/button";
@@ -316,6 +318,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
+  const [fromCache, setFromCache] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("files");
   const [reloadToken, setReloadToken] = useState(0);
   // Marks the next effect run as a manual regenerate (bypasses the cache).
@@ -329,15 +332,29 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     const refresh = refreshRef.current;
     refreshRef.current = false;
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-
     setLoading(true);
     setStreaming(false);
     setPlan(null);
     setError(null);
     setStopped(false);
+    setFromCache(false);
     setActiveTab("files");
+
+    // Local cache: a previously finished plan renders instantly, works
+    // offline, and costs zero provider tokens. Regenerate bypasses it.
+    const cacheKey = planKey(owner, repo, issue.number, selectedModel.id);
+    if (!refresh) {
+      const cached = getCachedPlan(cacheKey);
+      if (cached) {
+        setPlan(cached.plan);
+        setLoading(false);
+        setFromCache(true);
+        return;
+      }
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const labelNames = issue.labels.map((l) => l.name).join(", ") || "none";
 
@@ -379,6 +396,18 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
 
       const ct = res.headers.get("content-type") ?? "";
 
+      // Persist a finished plan so revisits are instant and free.
+      const persist = (finished: ContributionPlanData) =>
+        savePlan({
+          key: cacheKey,
+          owner,
+          repo,
+          number: issue.number,
+          title: issue.title,
+          provider: selectedModel.id,
+          plan: finished,
+        });
+
       // Cache hit or error path: a plain JSON response.
       if (ct.includes("application/json") || !res.body) {
         const data = await res.json();
@@ -386,6 +415,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
         if (!cancelled) {
           setPlan(data as ContributionPlanData);
           setLoading(false);
+          persist(data as ContributionPlanData);
         }
         return;
       }
@@ -407,9 +437,11 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
         setLoading(false);
       }
       if (!cancelled) {
-        setPlan(parsePlan(acc));
+        const finalPlan = parsePlan(acc);
+        setPlan(finalPlan);
         setLoading(false);
         setStreaming(false);
+        persist(finalPlan);
       }
     })().catch((err: unknown) => {
       if (cancelled) return;
@@ -519,6 +551,15 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
               <span className="inline-flex flex-shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-primary">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                 Generating…
+              </span>
+            )}
+            {fromCache && !streaming && (
+              <span
+                className="inline-flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-secondary/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                title="Loaded instantly from this device — use the regenerate button for a fresh plan"
+              >
+                <HardDrive className="h-3 w-3" />
+                Saved
               </span>
             )}
           </div>

@@ -12,6 +12,7 @@ import {
   Clock3,
   Bookmark,
   Search,
+  History,
 } from "lucide-react";
 import { GitashIcon } from "@/components/GitashIcon";
 import ApiKeyModal, { getStoredKey } from "@/components/ApiKeyModal";
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import {
   fetchLabels,
   fetchIssues,
+  fetchIssue,
   fetchRepoMeta,
   fetchRepoTree,
   GitHubAPIError,
@@ -36,6 +38,8 @@ import {
   type RepoTree,
 } from "@/lib/github";
 import { MODEL_OPTIONS, getModel } from "@/lib/models";
+import { parseRepo } from "@/lib/parseRepo";
+import { getPlanHistory, type SavedPlan } from "@/lib/planHistory";
 import { getRecentRepos, addRecentRepo, type RecentRepo } from "@/lib/recentRepos";
 import {
   getBookmarks,
@@ -281,12 +285,18 @@ export default function Home() {
 
   const [recentRepos, setRecentRepos] = useState<RecentRepo[]>([]);
   const [bookmarks, setBookmarks] = useState<SavedIssue[]>([]);
+  const [planHistory, setPlanHistory] = useState<SavedPlan[]>([]);
   const [savedOnly, setSavedOnly] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   useEffect(() => {
     setRecentRepos(getRecentRepos());
     setBookmarks(getBookmarks());
+    setPlanHistory(getPlanHistory());
   }, []);
+
+  // Issue number to auto-select once a repo's issues load (deep links and
+  // the past-plans panel both use this).
+  const pendingIssueRef = useRef<number | null>(null);
 
   const handleToggleBookmark = (issue: GitHubIssue) => {
     if (!repoMeta) return;
@@ -486,6 +496,30 @@ export default function Home() {
       setIssues(initialIssues);
       setHasMore(initialIssues.length === ISSUES_PER_PAGE);
       setRecentRepos(addRecentRepo(owner, repo));
+
+      // Deep link / past plan: select the requested issue once the list is in.
+      const pending = pendingIssueRef.current;
+      if (pending) {
+        pendingIssueRef.current = null;
+        const found = initialIssues.find((i) => i.number === pending);
+        if (found) {
+          setSelectedIssue(found);
+        } else {
+          // Not on page 1 (filtered out, deeper page, or closed) — fetch it
+          // directly and surface it at the top of the list.
+          try {
+            const single = await fetchIssue(owner, repo, pending, githubToken || undefined);
+            if (single) {
+              setIssues((prev) =>
+                prev.some((i) => i.number === single.number) ? prev : [single, ...prev]
+              );
+              setSelectedIssue(single);
+            }
+          } catch {
+            /* deep-linked issue unavailable — leave the list as is */
+          }
+        }
+      }
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -554,6 +588,37 @@ export default function Home() {
       setLoadingMore(false);
     }
   };
+
+  // ── Deep links ───────────────────────────────────────────────────────────
+  // On first load, honor ?repo=owner/repo&issue=N so shared links and
+  // refreshes restore the session. Runs once, after localStorage hydration
+  // (so the GitHub token is already available to the fetches).
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (!hydrated || deepLinkHandledRef.current) return;
+    deepLinkHandledRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const parsed = parseRepo(params.get("repo") ?? "");
+    if (!parsed) return;
+    const issueNum = Number(params.get("issue"));
+    if (Number.isInteger(issueNum) && issueNum > 0) pendingIssueRef.current = issueNum;
+    setSkippedSetup(true); // a shared link shouldn't dead-end on the setup screen
+    void handleAnalyze(parsed.owner, parsed.repo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
+
+  // Keep the URL in sync with the current repo/issue so any view is shareable
+  // and survives a refresh. replaceState avoids polluting browser history.
+  useEffect(() => {
+    if (!deepLinkHandledRef.current) return; // don't clobber params before they're read
+    const params = new URLSearchParams();
+    if (repoMeta) {
+      params.set("repo", `${repoMeta.owner}/${repoMeta.repo}`);
+      if (selectedIssue) params.set("issue", String(selectedIssue.number));
+    }
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [repoMeta, selectedIssue]);
 
   // Command-palette helpers — opening a repo also leaves the setup screen.
   const openRepoFromPalette = (owner: string, repo: string) => {
@@ -926,8 +991,38 @@ export default function Home() {
               </div>
             )}
 
+            {planHistory.length > 0 && (
+              <div className="w-full max-w-sm">
+                <p className="mb-2 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  <History className="h-3 w-3" />
+                  Past plans
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {planHistory.slice(0, 6).map((p) => (
+                    <button
+                      key={p.key}
+                      onClick={() => {
+                        pendingIssueRef.current = p.number;
+                        void handleAnalyze(p.owner, p.repo);
+                      }}
+                      title={`Reopen the saved plan for ${p.owner}/${p.repo}#${p.number}`}
+                      className="group flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-secondary/40 cursor-pointer"
+                    >
+                      <History className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate text-xs text-foreground/90">
+                        {p.title}
+                      </span>
+                      <span className="flex-shrink-0 font-mono text-[10px] text-muted-foreground">
+                        {p.owner}/{p.repo}#{p.number}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="w-full max-w-sm">
-              {(recentRepos.length > 0 || bookmarks.length > 0) && (
+              {(recentRepos.length > 0 || bookmarks.length > 0 || planHistory.length > 0) && (
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                   Try an example
                 </p>

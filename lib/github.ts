@@ -98,6 +98,25 @@ export async function fetchIssues(
   return items.filter((item) => !item.pull_request);
 }
 
+/**
+ * Fetches a single issue by number — used to honor deep links whose issue
+ * isn't on the first page of results (or is closed). Returns null for PRs.
+ */
+export async function fetchIssue(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  githubToken?: string
+): Promise<GitHubIssue | null> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
+    { headers: buildHeaders(githubToken) }
+  );
+  assertOk(res, `fetchIssue(${owner}/${repo}#${issueNumber})`);
+  const item: GitHubIssue & { pull_request?: unknown } = await res.json();
+  return item.pull_request ? null : item;
+}
+
 export interface IssueComment {
   author: string;
   body: string;

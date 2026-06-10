@@ -62,6 +62,18 @@
     @apply border-border;
   }
 
+  /* Respect the user's motion preference — collapse all decorative
+     animations (orbits, beams, shimmers) to a single static frame. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
   body {
     @apply text-foreground font-sans antialiased;
     background-color: hsl(var(--background));
