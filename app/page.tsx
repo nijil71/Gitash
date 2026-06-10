@@ -11,6 +11,7 @@ import {
   GitBranch,
   Clock3,
   Bookmark,
+  Search,
 } from "lucide-react";
 import { GitashIcon } from "@/components/GitashIcon";
 import ApiKeyModal, { getStoredKey } from "@/components/ApiKeyModal";
@@ -22,6 +23,7 @@ import LabelFilter from "@/components/LabelFilter";
 import IssueList from "@/components/IssueList";
 import IssueControls, { SORT_OPTIONS } from "@/components/IssueControls";
 import ContributionPlanPanel from "@/components/ContributionPlan";
+import CommandPalette from "@/components/CommandPalette";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -269,6 +271,7 @@ export default function Home() {
   const [recentRepos, setRecentRepos] = useState<RecentRepo[]>([]);
   const [bookmarks, setBookmarks] = useState<SavedIssue[]>([]);
   const [savedOnly, setSavedOnly] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
   useEffect(() => {
     setRecentRepos(getRecentRepos());
     setBookmarks(getBookmarks());
@@ -312,6 +315,12 @@ export default function Home() {
       const typing =
         !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
 
+      // Ctrl/Cmd+K toggles the command palette from anywhere.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setShowPalette((v) => !v);
+        return;
+      }
       // "/" focuses the issue search.
       if (e.key === "/" && !typing && repoLoadedRef.current) {
         e.preventDefault();
@@ -535,6 +544,37 @@ export default function Home() {
     }
   };
 
+  // Command-palette helpers — opening a repo also leaves the setup screen.
+  const openRepoFromPalette = (owner: string, repo: string) => {
+    setSkippedSetup(true);
+    void handleAnalyze(owner, repo);
+  };
+
+  const toggleTheme = () => {
+    const next = !document.documentElement.classList.contains("dark");
+    document.documentElement.classList.toggle("dark", next);
+    try {
+      localStorage.setItem("theme", next ? "dark" : "light");
+    } catch {
+      /* ignore storage errors */
+    }
+  };
+
+  const palette = (
+    <CommandPalette
+      open={showPalette}
+      onClose={() => setShowPalette(false)}
+      recentRepos={recentRepos}
+      bookmarks={bookmarks}
+      activeProvider={selectedModel.id}
+      onAnalyze={openRepoFromPalette}
+      onSwitchProvider={handleModelChange}
+      onOpenApiKey={() => setShowApiKeyModal(true)}
+      onOpenGitHubToken={() => setShowTokenModal(true)}
+      onToggleTheme={toggleTheme}
+    />
+  );
+
   // Show setup screen for first-time visitors (no API key, not skipped)
   if (hydrated && !apiKey && !skippedSetup) {
     return (
@@ -549,6 +589,12 @@ export default function Home() {
           onSave={handleApiKeySave}
           selectedModel={selectedModel}
         />
+        <GitHubTokenModal
+          isOpen={showTokenModal}
+          onClose={() => setShowTokenModal(false)}
+          onSave={setGithubToken}
+        />
+        {palette}
       </>
     );
   }
@@ -589,6 +635,18 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPalette(true)}
+              title="Command palette (Ctrl+K)"
+              className="hidden h-8 gap-1.5 text-xs text-muted-foreground md:inline-flex"
+            >
+              <Search className="h-3.5 w-3.5" />
+              <kbd className="rounded border border-border bg-secondary px-1 font-mono text-[10px]">
+                Ctrl K
+              </kbd>
+            </Button>
             <ModelSelector selected={selectedModel.id} onChange={handleModelChange} />
             <Button
               variant="outline"
@@ -884,6 +942,8 @@ export default function Home() {
         onClose={() => setShowTokenModal(false)}
         onSave={setGithubToken}
       />
+
+      {palette}
     </div>
   );
 }

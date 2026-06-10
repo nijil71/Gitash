@@ -75,15 +75,23 @@ export default function IssueList({
   return (
     <ScrollArea className="h-[calc(100vh-320px)] min-h-[300px] pr-2">
       <div className="flex flex-col gap-2 pb-4">
-        {issues.map((issue) => (
-          <IssueCard
+        {issues.map((issue, i) => (
+          // Staggered entrance: each card fades in slightly after the previous
+          // one (capped so long lists don't feel slow). `backwards` keeps cards
+          // hidden until their delay elapses.
+          <div
             key={issue.number}
-            issue={issue}
-            selected={selectedIssue?.number === issue.number}
-            onClick={() => onSelect(issue)}
-            bookmarked={bookmarkedNumbers?.has(issue.number) ?? false}
-            onToggleBookmark={onToggleBookmark ? () => onToggleBookmark(issue) : undefined}
-          />
+            className="animate-fade-in"
+            style={{ animationDelay: `${Math.min(i, 12) * 35}ms`, animationFillMode: "backwards" }}
+          >
+            <IssueCard
+              issue={issue}
+              selected={selectedIssue?.number === issue.number}
+              onClick={() => onSelect(issue)}
+              bookmarked={bookmarkedNumbers?.has(issue.number) ?? false}
+              onToggleBookmark={onToggleBookmark ? () => onToggleBookmark(issue) : undefined}
+            />
+          </div>
         ))}
 
         {hasMore && onLoadMore && (

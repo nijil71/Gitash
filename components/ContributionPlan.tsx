@@ -17,6 +17,8 @@ import {
   TriangleAlert,
   RefreshCw,
   Download,
+  Square,
+  Sparkles,
 } from "lucide-react";
 import type {
   ContributionPlan as ContributionPlanData,
@@ -26,7 +28,7 @@ import type {
 } from "@/types";
 import { fetchIssueComments } from "@/lib/github";
 import { parsePlan } from "@/lib/planParse";
-import LoadingSkeleton from "./LoadingSkeleton";
+import AIThinking, { SectionChips, type PlanSectionStatus } from "./AIThinking";
 import CopyButton from "./CopyButton";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -313,10 +315,13 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   const [loading, setLoading] = useState(true);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("files");
   const [reloadToken, setReloadToken] = useState(0);
   // Marks the next effect run as a manual regenerate (bypasses the cache).
   const refreshRef = useRef(false);
+  // Lets the Stop button abort the in-flight request/stream.
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -324,10 +329,14 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     const refresh = refreshRef.current;
     refreshRef.current = false;
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setStreaming(false);
     setPlan(null);
     setError(null);
+    setStopped(false);
     setActiveTab("files");
 
     const labelNames = issue.labels.map((l) => l.name).join(", ") || "none";
@@ -353,6 +362,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
 
       const res = await fetch("/api/analyze", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json", "x-api-key": apiKey },
         body: JSON.stringify({
           owner, repo,
@@ -402,14 +412,23 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
         setStreaming(false);
       }
     })().catch((err: unknown) => {
-      if (!cancelled) {
-        setError(err instanceof Error ? err.message : "Something went wrong");
+      if (cancelled) return;
+      // User hit Stop: keep whatever partial plan streamed in, no error.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setStopped(true);
         setLoading(false);
         setStreaming(false);
+        return;
       }
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setLoading(false);
+      setStreaming(false);
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issue.number, owner, repo, apiKey, selectedModel.id, reloadToken]);
 
@@ -417,6 +436,10 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     if (loading || streaming) return;
     refreshRef.current = true;
     setReloadToken((t) => t + 1);
+  };
+
+  const handleStop = () => {
+    abortRef.current?.abort();
   };
 
   const handleDownload = () => {
@@ -454,6 +477,16 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     gotchas: gotchas.length,
   };
 
+  // Live progress for the loader / streaming strip: a section counts as
+  // "arrived" once the tolerant parser has salvaged content for it.
+  const sectionStatus: PlanSectionStatus[] = [
+    { key: "summary", label: "Summary", done: Boolean(plan?.summary) },
+    { key: "files", label: "Files", done: files.length > 0 },
+    { key: "steps", label: "Steps", done: steps.length > 0 },
+    { key: "testing", label: "Testing", done: testing.length > 0 },
+    { key: "gotchas", label: "Gotchas", done: gotchas.length > 0 },
+  ];
+
   const markdownText = plan
     ? `## Issue #${issue.number}: ${issue.title}\n\n` +
       (plan.summary ? `${plan.summary}\n\n` : "") +
@@ -468,7 +501,13 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     : "";
 
   return (
-    <div className={cn("flex flex-col rounded-xl border border-border bg-card overflow-hidden h-full", className)}>
+    <div
+      className={cn(
+        "flex flex-col rounded-xl border border-border bg-card overflow-hidden h-full",
+        (loading || streaming) && "plan-generating",
+        className
+      )}
+    >
 
       {/* ── Panel header ── */}
       <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border flex-shrink-0">
@@ -499,6 +538,19 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-1.5">
+          {streaming && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleStop}
+              aria-label="Stop generating"
+              title="Stop generating (keeps what has streamed in so far)"
+              className="h-8 gap-1.5 text-xs animate-fade-in"
+            >
+              <Square className="h-3 w-3 fill-current" />
+              Stop
+            </Button>
+          )}
           <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
             <a href={issue.html_url} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="h-3.5 w-3.5" />
@@ -533,6 +585,13 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           {plan && <CopyButton text={markdownText} label="Copy" />}
         </div>
       </div>
+
+      {/* ── Live progress strip while the plan streams in ── */}
+      {streaming && !loading && (
+        <div className="flex-shrink-0 border-b border-border bg-secondary/20 px-5 py-2">
+          <SectionChips sections={sectionStatus} />
+        </div>
+      )}
 
       {/* ── Tab bar (only when plan is loaded) ── */}
       {plan && !loading && (
@@ -571,7 +630,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
       {/* ── Tab content ── */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-5">
-          {loading && <LoadingSkeleton />}
+          {loading && <AIThinking modelName={selectedModel.name} sections={sectionStatus} />}
 
           {error && (
             <Alert variant="destructive" className="animate-fade-in">
@@ -579,8 +638,32 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
             </Alert>
           )}
 
+          {/* Stopped before any content arrived — offer a clean restart. */}
+          {stopped && !plan && !loading && !error && (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center animate-fade-in">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary">
+                <Sparkles className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">Generation stopped</p>
+                <p className="text-xs text-muted-foreground">No content had streamed in yet.</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleRegenerate} className="h-8 gap-1.5 text-xs">
+                <RefreshCw className="h-3.5 w-3.5" />
+                Regenerate
+              </Button>
+            </div>
+          )}
+
           {plan && !loading && (
-            <div className="animate-fade-in space-y-4">
+            <div key={activeTab} className="animate-fade-in space-y-4">
+              {stopped && (
+                <Alert className="animate-fade-in">
+                  <AlertDescription className="text-xs">
+                    Generation stopped — showing the partial plan. Use the regenerate button for a complete one.
+                  </AlertDescription>
+                </Alert>
+              )}
               {/* Summary appears above every tab */}
               {plan.summary && (
                 <p className="text-sm text-foreground/90 leading-relaxed">{plan.summary}</p>

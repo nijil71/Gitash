@@ -29,7 +29,6 @@
 - **Actionable output** — every plan suggests a branch name and one-click Fork / web-editor / Open-PR links; copy or download as Markdown
 - **Stay organized** — bookmark issues, revisit recent repos, and navigate the list by keyboard (`/` to search, ↑/↓ to move)
 - **Higher rate limits** — add a GitHub token in-app to go from 60 to 5,000 req/hr (and reach private repos)
-- **Monochrome theme** with a light/dark toggle
 - **Privacy-first** — your AI key and GitHub token live only in your browser (`localStorage`), sent directly to the provider, never through our server
 
 ---

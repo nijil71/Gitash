@@ -12,7 +12,13 @@ export default function ThemeToggle() {
 
   useEffect(() => {
     setMounted(true);
-    setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
+    const read = () =>
+      setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
+    read();
+    // Stay in sync when the theme is changed elsewhere (e.g. command palette).
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
   }, []);
 
   const toggle = () => {

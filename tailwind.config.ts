@@ -58,9 +58,37 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        // Expanding ring that fades out (sonar pulse around the AI core).
+        "pulse-ring": {
+          "0%": { transform: "scale(0.55)", opacity: "0.7" },
+          "70%": { opacity: "0.15" },
+          "100%": { transform: "scale(1.15)", opacity: "0" },
+        },
+        orbit: {
+          from: { transform: "rotate(0deg)" },
+          to: { transform: "rotate(360deg)" },
+        },
+        "orbit-reverse": {
+          from: { transform: "rotate(0deg)" },
+          to: { transform: "rotate(-360deg)" },
+        },
+        breathe: {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.07)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "200% 0" },
+          "100%": { backgroundPosition: "-200% 0" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.2s ease-out",
+        "pulse-ring": "pulse-ring 2s cubic-bezier(0.2, 0.6, 0.4, 1) infinite",
+        orbit: "orbit 3.5s linear infinite",
+        "orbit-reverse": "orbit-reverse 5.5s linear infinite",
+        breathe: "breathe 2.4s ease-in-out infinite",
+        "spin-slow": "orbit 7s linear infinite",
+        shimmer: "shimmer 1.6s ease-in-out infinite",
       },
     },
   },

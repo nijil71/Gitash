@@ -78,9 +78,62 @@
   }
 }
 
+/* ── AI-generating border beam ──────────────────────────────────────────────
+   A thin monochrome light sweep that travels around the plan panel's border
+   while the model is generating. Uses @property so the conic angle animates;
+   browsers without support simply show no beam (graceful fallback). */
+@property --beam-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes beam-rotate {
+  to {
+    --beam-angle: 360deg;
+  }
+}
+
+.plan-generating {
+  position: relative;
+}
+
+.plan-generating::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0%,
+    hsl(var(--foreground) / 0.9) 10%,
+    hsl(var(--foreground) / 0.25) 18%,
+    transparent 26%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: beam-rotate 2.4s linear infinite;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* Ghost line that shimmers while content is being generated. */
+  .shimmer-line {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--muted-foreground) / 0.25) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
   }
 
   .scrollbar-thin {
