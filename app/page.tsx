@@ -651,10 +651,10 @@ export default function Home() {
               size="sm"
               onClick={() => setShowPalette(true)}
               title="Command palette (Ctrl+K)"
-              className="hidden h-8 gap-1.5 text-xs text-muted-foreground md:inline-flex"
+              className="inline-flex h-8 gap-1.5 text-xs text-muted-foreground"
             >
               <Search className="h-3.5 w-3.5" />
-              <kbd className="rounded border border-border bg-secondary px-1 font-mono text-[10px]">
+              <kbd className="hidden md:block rounded border border-border bg-secondary px-1 font-mono text-[10px]">
                 Ctrl K
               </kbd>
             </Button>
