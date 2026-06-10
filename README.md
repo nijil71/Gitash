@@ -13,9 +13,9 @@
 
 ---
 
-## Screenshot
+## Demo
 
-![Gitash](docs/image.png)
+![Gitash demo](docs/demo.gif)
 
 ---
 
