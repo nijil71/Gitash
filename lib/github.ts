@@ -13,7 +13,6 @@ export class GitHubAPIError extends Error {
 function buildHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
-    "User-Agent": "oss-contributor-agent/1.0",
   };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -54,7 +53,6 @@ export type IssueSortField = "created" | "updated" | "comments";
 export type SortDirection = "asc" | "desc";
 
 export interface FetchIssuesOptions {
-  /** Comma-separated label names; issues must carry ALL of them. */
   labels?: string;
   sort?: IssueSortField;
   direction?: SortDirection;
@@ -94,14 +92,9 @@ export async function fetchIssues(
 
   const items: Array<GitHubIssue & { pull_request?: unknown }> =
     await res.json();
-  // The issues endpoint returns PRs too — drop them.
   return items.filter((item) => !item.pull_request);
 }
 
-/**
- * Fetches a single issue by number — used to honor deep links whose issue
- * isn't on the first page of results (or is closed). Returns null for PRs.
- */
 export async function fetchIssue(
   owner: string,
   repo: string,
@@ -122,10 +115,6 @@ export interface IssueComment {
   body: string;
 }
 
-/**
- * Fetches the discussion on an issue — often where the real fix is worked out.
- * Returns up to `perPage` non-empty comments, oldest first.
- */
 export async function fetchIssueComments(
   owner: string,
   repo: string,
@@ -177,7 +166,6 @@ export async function fetchRepoMeta(
   };
 }
 
-// Paths we never want to feed to the model — build output, deps, binaries.
 const IGNORED_PATH =
   /(^|\/)(node_modules|\.git|\.next|\.turbo|dist|build|out|coverage|vendor|target|\.venv|venv|env|__pycache__|\.idea|\.vscode|bin|obj|\.cache)(\/|$)/i;
 const IGNORED_FILE =
@@ -187,14 +175,9 @@ const LOCKFILE =
 
 export interface RepoTree {
   paths: string[];
-  /** True if GitHub or our own cap dropped some entries. */
   truncated: boolean;
 }
 
-/**
- * Fetches the repository's file tree (recursively) and returns a filtered,
- * size-capped list of source paths suitable for grounding an LLM prompt.
- */
 export async function fetchRepoTree(
   owner: string,
   repo: string,
@@ -203,9 +186,7 @@ export async function fetchRepoTree(
   githubToken?: string
 ): Promise<RepoTree> {
   const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(
-      branch
-    )}?recursive=1`,
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     { headers: buildHeaders(githubToken) }
   );
   assertOk(res, `fetchRepoTree(${owner}/${repo})`);
@@ -219,7 +200,6 @@ export async function fetchRepoTree(
     .filter((node) => node.type === "blob")
     .map((node) => node.path)
     .filter((p) => !IGNORED_PATH.test(p) && !IGNORED_FILE.test(p) && !LOCKFILE.test(p))
-    // Shallower paths first — they're the most orienting for a newcomer.
     .sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
 
   return {
