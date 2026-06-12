@@ -319,6 +319,9 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   const [error, setError] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
   const [fromCache, setFromCache] = useState(false);
+  // True when the cached plan predates the issue's last update — the plan
+  // may not reflect new comments, scope changes, or a maintainer's decision.
+  const [staleCache, setStaleCache] = useState(false);
   // Stage-1 state: true while selecting + reading source files; the count of
   // files whose real contents grounded the current plan.
   const [grounding, setGrounding] = useState(false);
@@ -342,6 +345,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     setError(null);
     setStopped(false);
     setFromCache(false);
+    setStaleCache(false);
     setGrounding(false);
     setGroundedFiles(0);
     setActiveTab("files");
@@ -355,6 +359,8 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
         setPlan(cached.plan);
         setLoading(false);
         setFromCache(true);
+        const updatedAt = new Date(issue.updated_at).getTime();
+        setStaleCache(!Number.isNaN(updatedAt) && updatedAt > cached.savedAt);
         return;
       }
     }
@@ -762,6 +768,25 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
                 <Alert className="animate-fade-in">
                   <AlertDescription className="text-xs">
                     Generation stopped — showing the partial plan. Use the regenerate button for a complete one.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {fromCache && staleCache && (
+                <Alert className="animate-fade-in">
+                  <AlertDescription className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="min-w-0 flex-1">
+                      This issue has been updated since this plan was generated — new comments
+                      or scope changes may not be reflected.
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRegenerate}
+                      className="h-7 flex-shrink-0 gap-1.5 text-xs"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Regenerate
+                    </Button>
                   </AlertDescription>
                 </Alert>
               )}

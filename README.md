@@ -25,7 +25,8 @@
 - **Filter, search & sort** — combine multiple labels, search loaded issues, sort by newest / recently updated / most commented, and page through results
 - **Pick your AI** — choose between Claude (Anthropic), GPT (OpenAI), or Gemini (Google)
 - **Code-grounded plans** — a quick AI pass picks the most relevant files, their real contents are fetched from GitHub, and the plan is written against actual code (real function and component names, not guesses from file names)
-- **Duplicate-work guard** — selecting an issue checks for open PRs that already reference it; if found, plan generation pauses behind a dialog so you can review the existing work before spending tokens (cached plans are free and never paused)
+- **Duplicate-work guard** — selecting an issue checks for open PRs that already reference it; if found (or the issue is already closed), plan generation pauses behind a dialog so you can review the existing work before spending tokens (cached plans are free and never paused)
+- **Stale-plan warning** — a cached plan warns when the issue has been updated since it was generated, with one-click regenerate
 - **Streaming, structured plans** — summary, difficulty + effort estimate, prerequisites, relevant files, step-by-step guide, testing notes, and gotchas, streamed in live
 - **Actionable output** — every plan suggests a branch name and one-click Fork / web-editor / Open-PR links; copy or download as Markdown
 - **Stay organized** — bookmark issues, revisit recent repos, and navigate the list by keyboard (`/` to search, ↑/↓ to move)
@@ -134,7 +135,7 @@ You can switch providers at any time from the header — each provider's key is 
 │   ├── IssueControls.tsx      # Search + sort bar
 │   ├── IssueList.tsx
 │   ├── LabelFilter.tsx
-│   ├── LinkedPRNotice.tsx     # Warns when an open PR already covers the issue
+│   ├── PlanGate.tsx           # Pauses plan generation: linked open PR / closed issue
 │   ├── LoadingSkeleton.tsx
 │   ├── ModelSelector.tsx
 │   ├── RepoInput.tsx

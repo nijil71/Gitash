@@ -24,7 +24,7 @@ import LabelFilter from "@/components/LabelFilter";
 import IssueList from "@/components/IssueList";
 import IssueControls, { SORT_OPTIONS } from "@/components/IssueControls";
 import ContributionPlanPanel from "@/components/ContributionPlan";
-import LinkedPRNotice, { LinkedPRDialog, LinkedPRGateCard } from "@/components/LinkedPRNotice";
+import PlanGateNotice, { PlanGateDialog, PlanGateCard } from "@/components/PlanGate";
 import CommandPalette from "@/components/CommandPalette";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -301,24 +301,32 @@ export default function Home() {
   // the past-plans panel both use this).
   const pendingIssueRef = useRef<number | null>(null);
 
-  // ── Linked-PR gate ───────────────────────────────────────────────────────
-  // Before generating a plan, check whether an open PR already references the
-  // selected issue. If so, pause generation and ask — reviewing existing work
-  // is free; a plan costs tokens. Fail open: a failed check never blocks.
-  const [openPRs, setOpenPRs] = useState<LinkedPR[]>([]);
+  // ── Plan gate ────────────────────────────────────────────────────────────
+  // Before generating a plan, pause when the issue is already closed (deep
+  // links and past plans can land on one) or an open PR already references
+  // it — reviewing existing work is free; a plan costs tokens. Fail open:
+  // a failed PR check never blocks generation.
+  const [linkedPRs, setLinkedPRs] = useState<LinkedPR[]>([]);
   const [prCheckPending, setPrCheckPending] = useState(false);
   const [planAnyway, setPlanAnyway] = useState(false);
-  const [showPRDialog, setShowPRDialog] = useState(false);
+  const [showGateDialog, setShowGateDialog] = useState(false);
 
   useEffect(() => {
-    setOpenPRs([]);
+    setLinkedPRs([]);
     setPlanAnyway(false);
-    setShowPRDialog(false);
+    setShowGateDialog(false);
     if (!selectedIssue || !repoMeta) {
       setPrCheckPending(false);
       return;
     }
     let cancelled = false;
+    // Only interrupt when a plan would actually be generated: a key is set
+    // and there's no cached plan to serve for free.
+    const wouldGenerate =
+      Boolean(apiKey) &&
+      !getCachedPlan(planKey(repoMeta.owner, repoMeta.repo, selectedIssue.number, selectedModel.id));
+    // A closed issue is known synchronously — pop before the PR check returns.
+    if (selectedIssue.state === "closed" && wouldGenerate) setShowGateDialog(true);
     setPrCheckPending(true);
     void getLinkedPRs(
       repoMeta.owner,
@@ -327,17 +335,14 @@ export default function Home() {
       githubToken || undefined
     ).then((prs) => {
       if (cancelled) return;
-      const open = prs.filter((pr) => pr.state === "open");
-      setOpenPRs(open);
+      setLinkedPRs(prs);
       setPrCheckPending(false);
-      // Only interrupt when a plan would actually be generated: a key is set
-      // and there's no cached plan to serve for free.
       if (
-        open.length > 0 &&
-        apiKey &&
-        !getCachedPlan(planKey(repoMeta.owner, repoMeta.repo, selectedIssue.number, selectedModel.id))
+        selectedIssue.state !== "closed" &&
+        prs.some((pr) => pr.state === "open") &&
+        wouldGenerate
       ) {
-        setShowPRDialog(true);
+        setShowGateDialog(true);
       }
     });
     return () => {
@@ -737,16 +742,24 @@ export default function Home() {
     : searched;
 
   // Plan gating: hold generation while the linked-PR check runs, and pause it
-  // when open PRs exist. A cached plan costs nothing, so it's never gated.
+  // when the issue is closed or open PRs exist. A cached plan costs nothing,
+  // so it's never gated. For a closed issue every linked PR matters (a merged
+  // one explains the closure); for an open issue only open PRs do.
+  const issueClosed = selectedIssue?.state === "closed";
+  const openPRs = linkedPRs.filter((pr) => pr.state === "open");
+  const gatePRs = issueClosed ? linkedPRs : openPRs;
   const cachedPlanExists =
     selectedIssue && repoMeta
       ? Boolean(
           getCachedPlan(planKey(repoMeta.owner, repoMeta.repo, selectedIssue.number, selectedModel.id))
         )
       : false;
-  const planHolding = Boolean(apiKey) && prCheckPending && !cachedPlanExists;
+  const planHolding = Boolean(apiKey) && prCheckPending && !cachedPlanExists && !issueClosed;
   const planGated =
-    Boolean(apiKey) && openPRs.length > 0 && !planAnyway && !cachedPlanExists;
+    Boolean(apiKey) &&
+    !planAnyway &&
+    !cachedPlanExists &&
+    (issueClosed || openPRs.length > 0);
 
   // Keep the keyboard-nav refs in sync with the latest render.
   visibleIssuesRef.current = visibleIssues;
@@ -943,12 +956,13 @@ export default function Home() {
 
                 {/* The banner stays visible once the gate is passed (or when
                     no plan will be generated); while gated, the gate card
-                    itself carries the PR details. */}
+                    itself carries the details. */}
                 {selectedIssue && !planGated && !planHolding && (
-                  <LinkedPRNotice
-                    openPRs={openPRs}
+                  <PlanGateNotice
+                    prs={gatePRs}
                     owner={repoMeta.owner}
                     repo={repoMeta.repo}
+                    issueClosed={issueClosed}
                   />
                 )}
 
@@ -960,10 +974,12 @@ export default function Home() {
                     </p>
                   </div>
                 ) : selectedIssue && apiKey && planGated ? (
-                  <LinkedPRGateCard
-                    openPRs={openPRs}
+                  <PlanGateCard
+                    prs={gatePRs}
                     owner={repoMeta.owner}
                     repo={repoMeta.repo}
+                    issueClosed={issueClosed}
+                    issueUrl={selectedIssue.html_url}
                     onGenerate={() => setPlanAnyway(true)}
                   />
                 ) : selectedIssue && apiKey ? (
@@ -1145,15 +1161,17 @@ export default function Home() {
       />
 
       {repoMeta && selectedIssue && (
-        <LinkedPRDialog
-          open={showPRDialog}
-          onOpenChange={setShowPRDialog}
-          openPRs={openPRs}
+        <PlanGateDialog
+          open={showGateDialog}
+          onOpenChange={setShowGateDialog}
+          prs={gatePRs}
           owner={repoMeta.owner}
           repo={repoMeta.repo}
+          issueClosed={issueClosed}
+          issueUrl={selectedIssue.html_url}
           onGenerate={() => {
             setPlanAnyway(true);
-            setShowPRDialog(false);
+            setShowGateDialog(false);
           }}
         />
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, MessageSquare, Bookmark, UserCheck, Smile } from "lucide-react";
+import { ExternalLink, MessageSquare, Bookmark, UserCheck, Smile, CheckCircle } from "lucide-react";
 import type { GitHubIssue } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +65,15 @@ export default function IssueCard({ issue, selected, onClick, bookmarked, onTogg
                 <span className="text-muted-foreground/40">·</span>
                 <span>{timeAgo(issue.created_at)}</span>
               </>
+            )}
+            {issue.state === "closed" && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-foreground/10 px-1.5 py-0.5 text-foreground/80"
+                title="This issue is closed — the work was likely already done or declined"
+              >
+                <CheckCircle className="h-3 w-3" />
+                closed
+              </span>
             )}
             {issue.assignees && issue.assignees.length > 0 && (
               <span
