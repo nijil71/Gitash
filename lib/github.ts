@@ -20,6 +20,42 @@ function buildHeaders(token?: string): Record<string, string> {
   return headers;
 }
 
+// ── Rate-limit tracking ────────────────────────────────────────────────────
+// GitHub reports the caller's budget on every response. Broadcast it so the
+// UI can nudge for a token *before* requests start failing at the wall.
+
+export interface RateLimitInfo {
+  remaining: number;
+  limit: number;
+  /** Unix seconds when the window resets. */
+  reset: number;
+}
+
+export const RATE_LIMIT_EVENT = "gitash:ratelimit";
+
+function trackRateLimit(res: Response): void {
+  if (typeof window === "undefined") return;
+  const remaining = Number(res.headers.get("x-ratelimit-remaining"));
+  const limit = Number(res.headers.get("x-ratelimit-limit"));
+  const reset = Number(res.headers.get("x-ratelimit-reset"));
+  if (!Number.isFinite(remaining) || !Number.isFinite(limit) || limit <= 0) return;
+  window.dispatchEvent(
+    new CustomEvent<RateLimitInfo>(RATE_LIMIT_EVENT, {
+      detail: { remaining, limit, reset },
+    })
+  );
+}
+
+// Single fetch path for every GitHub call: builds headers, tracks the rate
+// limit. Callers still assertOk() with their own context string.
+async function ghFetch(url: string, token?: string, accept?: string): Promise<Response> {
+  const headers = buildHeaders(token);
+  if (accept) headers.Accept = accept;
+  const res = await fetch(url, { headers });
+  trackRateLimit(res);
+  return res;
+}
+
 function assertOk(res: Response, context: string): void {
   if (res.ok) return;
   if (res.status === 404) {
@@ -39,9 +75,9 @@ export async function fetchLabels(
   repo: string,
   githubToken?: string
 ): Promise<GitHubLabel[]> {
-  const res = await fetch(
+  const res = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/labels?per_page=50`,
-    { headers: buildHeaders(githubToken) }
+    githubToken
   );
   assertOk(res, `fetchLabels(${owner}/${repo})`);
   return res.json();
@@ -84,9 +120,9 @@ export async function fetchIssues(
   });
   if (labels) params.set("labels", labels);
 
-  const res = await fetch(
+  const res = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/issues?${params}`,
-    { headers: buildHeaders(token) }
+    token
   );
   assertOk(res, `fetchIssues(${owner}/${repo})`);
 
@@ -101,9 +137,9 @@ export async function fetchIssue(
   issueNumber: number,
   githubToken?: string
 ): Promise<GitHubIssue | null> {
-  const res = await fetch(
+  const res = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
-    { headers: buildHeaders(githubToken) }
+    githubToken
   );
   assertOk(res, `fetchIssue(${owner}/${repo}#${issueNumber})`);
   const item: GitHubIssue & { pull_request?: unknown } = await res.json();
@@ -122,9 +158,9 @@ export async function fetchIssueComments(
   perPage = 20,
   githubToken?: string
 ): Promise<IssueComment[]> {
-  const res = await fetch(
+  const res = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=${perPage}`,
-    { headers: buildHeaders(githubToken) }
+    githubToken
   );
   assertOk(res, `fetchIssueComments(${owner}/${repo}#${issueNumber})`);
 
@@ -151,9 +187,9 @@ export async function fetchLinkedPRs(
   issueNumber: number,
   githubToken?: string
 ): Promise<LinkedPR[]> {
-  const res = await fetch(
+  const res = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/timeline?per_page=100`,
-    { headers: buildHeaders(githubToken) }
+    githubToken
   );
   assertOk(res, `fetchLinkedPRs(${owner}/${repo}#${issueNumber})`);
 
@@ -206,14 +242,13 @@ export async function fetchFileContent(
   githubToken?: string,
   maxChars = 10_000
 ): Promise<string> {
-  const headers = buildHeaders(githubToken);
-  headers.Accept = "application/vnd.github.raw+json";
-  const res = await fetch(
+  const res = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${path
       .split("/")
       .map(encodeURIComponent)
       .join("/")}?ref=${encodeURIComponent(ref)}`,
-    { headers }
+    githubToken,
+    "application/vnd.github.raw+json"
   );
   assertOk(res, `fetchFileContent(${owner}/${repo}:${path})`);
   const text = await res.text();
@@ -232,10 +267,7 @@ export async function fetchRepoMeta(
   description: string;
   defaultBranch: string;
 }> {
-  const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}`,
-    { headers: buildHeaders(githubToken) }
-  );
+  const res = await ghFetch(`https://api.github.com/repos/${owner}/${repo}`, githubToken);
   assertOk(res, `fetchRepoMeta(${owner}/${repo})`);
 
   const data: {
@@ -272,9 +304,9 @@ export async function fetchRepoTree(
   maxPaths = 400,
   githubToken?: string
 ): Promise<RepoTree> {
-  const res = await fetch(
+  const res = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
-    { headers: buildHeaders(githubToken) }
+    githubToken
   );
   assertOk(res, `fetchRepoTree(${owner}/${repo})`);
 

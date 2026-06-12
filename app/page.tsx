@@ -13,6 +13,8 @@ import {
   Bookmark,
   Search,
   History,
+  Gauge,
+  X,
 } from "lucide-react";
 import { GitashIcon } from "@/components/GitashIcon";
 import ApiKeyModal, { getStoredKey } from "@/components/ApiKeyModal";
@@ -36,6 +38,8 @@ import {
   fetchRepoTree,
   GitHubAPIError,
   ISSUES_PER_PAGE,
+  RATE_LIMIT_EVENT,
+  type RateLimitInfo,
   type RepoTree,
   type LinkedPR,
 } from "@/lib/github";
@@ -300,6 +304,20 @@ export default function Home() {
   // Issue number to auto-select once a repo's issues load (deep links and
   // the past-plans panel both use this).
   const pendingIssueRef = useRef<number | null>(null);
+
+  // ── Rate-limit awareness ─────────────────────────────────────────────────
+  // lib/github.ts broadcasts GitHub's x-ratelimit headers on every response.
+  // Warn before requests start failing at the wall; dismissal lasts until the
+  // current window resets.
+  const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null);
+  const [rateNoticeDismissedUntil, setRateNoticeDismissedUntil] = useState(0);
+
+  useEffect(() => {
+    const onRateLimit = (e: Event) =>
+      setRateLimit((e as CustomEvent<RateLimitInfo>).detail);
+    window.addEventListener(RATE_LIMIT_EVENT, onRateLimit);
+    return () => window.removeEventListener(RATE_LIMIT_EVENT, onRateLimit);
+  }, []);
 
   // ── Plan gate ────────────────────────────────────────────────────────────
   // Before generating a plan, pause when the issue is already closed (deep
@@ -761,6 +779,21 @@ export default function Home() {
     ? searched.filter((i) => bookmarkedNumbers.has(i.number))
     : searched;
 
+  // Low-budget warning: 10 requests is one or two issue selections away from
+  // hard failures. Dismissal is keyed to the window's reset time, so the
+  // banner stays gone until a fresh window starts running low again.
+  const showRateNotice =
+    rateLimit !== null &&
+    rateLimit.remaining <= 10 &&
+    rateLimit.reset !== rateNoticeDismissedUntil;
+  const rateResetLabel =
+    rateLimit && Number.isFinite(rateLimit.reset)
+      ? new Date(rateLimit.reset * 1000).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null;
+
   // Plan gating: hold generation while the linked-PR check runs, and pause it
   // when the issue is closed or open PRs exist. A cached plan costs nothing,
   // so it's never gated. For a closed issue every linked PR matters (a merged
@@ -867,6 +900,39 @@ export default function Home() {
         <div className="mb-5">
           <RepoInput onAnalyze={handleAnalyze} loading={loading} />
         </div>
+
+        {/* GitHub rate limit running low */}
+        {showRateNotice && rateLimit && (
+          <Alert className="mb-5 animate-fade-in">
+            <Gauge className="h-4 w-4" />
+            <AlertDescription className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="min-w-0 flex-1">
+                GitHub rate limit almost used up — {rateLimit.remaining} of {rateLimit.limit}{" "}
+                requests left{rateResetLabel ? ` (resets at ${rateResetLabel})` : ""}.
+                {!githubToken && " A free GitHub token raises it to 5,000/hr."}
+              </span>
+              {!githubToken && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTokenModal(true)}
+                  className="h-7 flex-shrink-0 gap-1.5 text-xs"
+                >
+                  <GitBranch className="h-3 w-3" />
+                  Add token
+                </Button>
+              )}
+              <button
+                onClick={() => setRateNoticeDismissedUntil(rateLimit.reset)}
+                aria-label="Dismiss rate limit notice"
+                title="Dismiss until the limit resets"
+                className="flex-shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Error */}
         {error && (

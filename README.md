@@ -27,6 +27,8 @@
 - **Code-grounded plans** — a quick AI pass picks the most relevant files, their real contents are fetched from GitHub, and the plan is written against actual code (real function and component names, not guesses from file names)
 - **Duplicate-work guard** — selecting an issue checks for open PRs that already reference it; if found (or the issue is already closed), plan generation pauses behind a dialog so you can review the existing work before spending tokens (cached plans are free and never paused)
 - **Stale-plan warning** — a cached plan warns when the issue has been updated since it was generated, with one-click regenerate
+- **Convention-aware plans** — if the repo has a CONTRIBUTING file, the AI reads it and bakes CLA, commit-format, and "discuss first" rules into the prerequisites and gotchas; a Guide button links to it from every plan
+- **Rate-limit heads-up** — when your GitHub request budget runs low, a banner warns you (with reset time) and offers the one-click token setup before things start failing
 - **Streaming, structured plans** — summary, difficulty + effort estimate, prerequisites, relevant files, step-by-step guide, testing notes, and gotchas, streamed in live
 - **Actionable output** — every plan suggests a branch name and one-click Fork / web-editor / Open-PR links; copy or download as Markdown
 - **Stay organized** — bookmark issues, revisit recent repos, and navigate the list by keyboard (`/` to search, ↑/↓ to move)
@@ -52,6 +54,7 @@
         ├── issue context (title, body, labels, repo)
         ├── fileTree (filtered list of the repo's real source paths)
         ├── fileContents (the stage-1 picks, truncated)
+        ├── contributingGuide (the repo's CONTRIBUTING file, if present)
         └── comments (the issue discussion, fetched from GitHub)
                 └── AI streams a structured plan (summary, difficulty,
                     files, steps, testing, gotchas…)

@@ -48,6 +48,8 @@ interface AnalyzeRequestBody {
   mode?: string;
   /** Stage-2 grounding: real contents of the stage-1 picks, fetched client-side. */
   fileContents?: { path: string; content: string }[];
+  /** The repo's CONTRIBUTING file, when one exists (fetched client-side). */
+  contributingGuide?: { path: string; content: string } | null;
   /** When true, ignore the cached plan and regenerate from scratch. */
   refresh?: boolean;
 }
@@ -90,6 +92,7 @@ const MAX_BODY_CHARS = 6000;
 // Stage-2 grounding: real file contents included in the plan prompt.
 const MAX_CONTENT_FILES = 5;
 const MAX_CONTENT_CHARS = 10_000;
+const MAX_GUIDE_CHARS = 6_000;
 
 function issueContext(
   owner: string,
@@ -128,7 +131,8 @@ function buildUserPrompt(
   labels: string,
   fileTree: string[],
   comments: { author: string; body: string }[],
-  fileContents: { path: string; content: string }[]
+  fileContents: { path: string; content: string }[],
+  contributingGuide: { path: string; content: string } | null
 ): string {
   const treeSection =
     fileTree.length > 0
@@ -149,10 +153,19 @@ function buildUserPrompt(
         `variable, and component names above rather than guessing from file names.\n\n`
       : "";
 
+  const guideSection = contributingGuide
+    ? `Project contribution guidelines (${contributingGuide.path}, may be truncated):\n` +
+      contributingGuide.content.slice(0, MAX_GUIDE_CHARS) +
+      `\n\nReflect any mandatory process from these guidelines — CLA, commit message ` +
+      `format, branch naming, required tests/lint, "discuss before opening a PR" rules — ` +
+      `in the "prerequisites" and "gotchas" sections.\n\n`
+    : "";
+
   return (
     issueContext(owner, repo, issueNumber, issueTitle, issueBody, labels, comments) +
     treeSection +
     contentsSection +
+    guideSection +
     `Return a JSON object with these string keys, in this exact order:\n` +
     `- "summary": 1–2 sentence plain-language overview of what the issue asks and your fix approach\n` +
     `- "difficulty": one word — "beginner", "intermediate", or "advanced"\n` +
@@ -325,7 +338,7 @@ async function handlePost(req: Request): Promise<Response> {
     );
   }
 
-  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider, fileTree, comments, mode, fileContents, refresh } =
+  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider, fileTree, comments, mode, fileContents, contributingGuide, refresh } =
     body as AnalyzeRequestBody;
 
   let modelOption;
@@ -402,7 +415,13 @@ async function handlePost(req: Request): Promise<Response> {
       ? fileContents.filter(
           (f) => f && typeof f.path === "string" && typeof f.content === "string" && f.content
         )
-      : []
+      : [],
+    contributingGuide &&
+      typeof contributingGuide.path === "string" &&
+      typeof contributingGuide.content === "string" &&
+      contributingGuide.content
+      ? contributingGuide
+      : null
   );
 
   // Abort the provider call if it runs past the timeout.

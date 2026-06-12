@@ -52,6 +52,11 @@ interface Props {
   className?: string;
 }
 
+// Contributing guide lookup in the (depth-sorted) file tree — root and
+// .github/docs variants land early enough to survive the 400-path cap.
+const CONTRIBUTING_RE = /(^|\/)contributing(\.(md|markdown|rst|txt))?$/i;
+const MAX_GUIDE_CHARS = 6_000;
+
 // Suggest a conventional branch name from the issue's labels + title.
 function suggestBranchName(issue: GitHubIssue): string {
   const labels = issue.labels.map((l) => l.name.toLowerCase());
@@ -400,6 +405,16 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
         comments,
       };
 
+      // Best-effort: the project's CONTRIBUTING file, so prerequisites and
+      // gotchas reflect the project's actual process (CLA, commit format,
+      // "discuss first" rules). Fetched in parallel with stage 1 below.
+      const contributingPath = fileTree.find((p) => CONTRIBUTING_RE.test(p)) ?? null;
+      const guidePromise: Promise<{ path: string; content: string } | null> = contributingPath
+        ? fetchFileContent(owner, repo, contributingPath, defaultBranch, githubToken || undefined, MAX_GUIDE_CHARS)
+            .then((content) => ({ path: contributingPath, content }))
+            .catch(() => null)
+        : Promise.resolve(null);
+
       // Stage 1 (best-effort): ask the model which files matter, then pull
       // their real contents from GitHub — client-side, like every other repo
       // call — so the plan cites actual code. Any failure here falls back to
@@ -435,6 +450,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           setGrounding(false);
         }
       }
+      const contributingGuide = await guidePromise;
       if (cancelled) return;
       setGroundedFiles(fileContents.length);
 
@@ -442,7 +458,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-        body: JSON.stringify({ ...requestBase, fileContents, refresh }),
+        body: JSON.stringify({ ...requestBase, fileContents, contributingGuide, refresh }),
       });
 
       const ct = res.headers.get("content-type") ?? "";
@@ -538,6 +554,10 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   };
 
   const branchName = suggestBranchName(issue);
+  const guidePath = fileTree.find((p) => CONTRIBUTING_RE.test(p)) ?? null;
+  const guideUrl = guidePath
+    ? `https://github.com/${owner}/${repo}/blob/${defaultBranch}/${guidePath}`
+    : null;
   const forkUrl = `https://github.com/${owner}/${repo}/fork`;
   const editorUrl = `https://github.dev/${owner}/${repo}/tree/${defaultBranch}`;
   const compareUrl = `https://github.com/${owner}/${repo}/compare`;
@@ -834,7 +854,20 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           </div>
 
           {/* Quick actions */}
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className={cn("grid gap-1.5", guideUrl ? "grid-cols-4" : "grid-cols-3")}>
+            {guideUrl && (
+              <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+                <a
+                  href={guideUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Read the project's contributing guide before opening a PR"
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  Guide
+                </a>
+              </Button>
+            )}
             <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
               <a href={forkUrl} target="_blank" rel="noopener noreferrer">
                 <GitFork className="h-3.5 w-3.5" />
