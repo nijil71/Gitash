@@ -679,6 +679,25 @@ export default function Home() {
     void handleAnalyze(owner, repo);
   };
 
+  // Back to the home screen (recents, saved issues, past plans). Re-reads
+  // localStorage so anything saved during the session shows up immediately.
+  const goHome = () => {
+    setRepoMeta(null);
+    setLabels([]);
+    setActiveLabels([]);
+    setIssues([]);
+    setFileTree(null);
+    setSelectedIssue(null);
+    setError(null);
+    setSearch("");
+    setSavedOnly(false);
+    setPage(1);
+    setHasMore(false);
+    setRecentRepos(getRecentRepos());
+    setBookmarks(getBookmarks());
+    setPlanHistory(getPlanHistory());
+  };
+
   const toggleTheme = () => {
     const next = !document.documentElement.classList.contains("dark");
     document.documentElement.classList.toggle("dark", next);
@@ -701,6 +720,7 @@ export default function Home() {
       onOpenApiKey={() => setShowApiKeyModal(true)}
       onOpenGitHubToken={() => setShowTokenModal(true)}
       onToggleTheme={toggleTheme}
+      onGoHome={goHome}
     />
   );
 
@@ -773,15 +793,20 @@ export default function Home() {
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2.5">
+          <button
+            onClick={goHome}
+            title="Back to home — recents, saved issues, past plans"
+            aria-label="Go to home screen"
+            className="flex items-center gap-2.5 cursor-pointer rounded-md transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <GitashIcon size={28} />
-            <div>
+            <div className="text-left">
               <span className="text-sm font-semibold text-foreground tracking-tight">Gitash</span>
               <span className="hidden sm:inline text-xs text-muted-foreground ml-2">
                 OSS Contributor Agent
               </span>
             </div>
-          </div>
+          </button>
 
           <div className="flex items-center gap-2">
             <Button

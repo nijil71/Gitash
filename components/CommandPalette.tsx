@@ -11,6 +11,7 @@ import {
   Bot,
   CornerDownLeft,
   ArrowRight,
+  Home,
 } from "lucide-react";
 import { parseRepo } from "@/lib/parseRepo";
 import { MODEL_OPTIONS } from "@/lib/models";
@@ -30,6 +31,7 @@ interface Props {
   onOpenApiKey: () => void;
   onOpenGitHubToken: () => void;
   onToggleTheme: () => void;
+  onGoHome: () => void;
 }
 
 interface PaletteItem {
@@ -59,6 +61,7 @@ export default function CommandPalette({
   onOpenApiKey,
   onOpenGitHubToken,
   onToggleTheme,
+  onGoHome,
 }: Props) {
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
@@ -125,6 +128,18 @@ export default function CommandPalette({
         run: pick(owner, repo),
       });
     }
+
+    out.push({
+      id: "action:home",
+      group: "Actions",
+      label: "Go home",
+      hint: "Recents, saved issues, past plans",
+      icon: Home,
+      run: () => {
+        onClose();
+        onGoHome();
+      },
+    });
 
     for (const option of MODEL_OPTIONS) {
       if (option.id === activeProvider) continue;
@@ -193,6 +208,7 @@ export default function CommandPalette({
     onOpenApiKey,
     onOpenGitHubToken,
     onToggleTheme,
+    onGoHome,
   ]);
 
   // Clamp the highlight whenever the filtered list shrinks.
