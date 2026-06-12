@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { GitPullRequest, Loader2, SearchX } from "lucide-react";
 import type { GitHubIssue } from "@/types";
 import IssueCard from "./IssueCard";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 interface Props {
   issues: GitHubIssue[];
@@ -35,6 +37,27 @@ export default function IssueList({
   bookmarkedNumbers,
   onToggleBookmark,
 }: Props) {
+  // Scroll-edge fades: instead of hard-clipping cards mid-label, a soft
+  // gradient signals "the list continues" — each fade shows only when there
+  // is content in that direction.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [atTop, setAtTop] = useState(true);
+  const [atBottom, setAtBottom] = useState(true);
+
+  const updateEdges = (el: HTMLElement) => {
+    setAtTop(el.scrollTop <= 4);
+    setAtBottom(el.scrollTop + el.clientHeight >= el.scrollHeight - 4);
+  };
+
+  // Measure on mount and whenever the list content changes (load more,
+  // filters); Radix exposes the scrollable viewport via a data attribute.
+  useEffect(() => {
+    const viewport = wrapRef.current?.querySelector<HTMLElement>(
+      "[data-radix-scroll-area-viewport]"
+    );
+    if (viewport) updateEdges(viewport);
+  }, [issues.length, loadingMore]);
+
   if (issues.length === 0) {
     // Three distinct cases: client-side filter, label filter, or a genuinely
     // empty issue tracker.
@@ -73,8 +96,12 @@ export default function IssueList({
   }
 
   return (
-    <ScrollArea className="h-[calc(100vh-320px)] min-h-[300px] pr-2">
-      <div className="flex flex-col gap-2 pb-4">
+    <div ref={wrapRef} className="relative h-full">
+      <ScrollArea
+        className="h-full pr-2"
+        onScrollCapture={(e) => updateEdges(e.target as HTMLElement)}
+      >
+        <div className="flex flex-col gap-2 pb-4">
         {issues.map((issue, i) => (
           // Staggered entrance: each card fades in slightly after the previous
           // one (capped so long lists don't feel slow). `backwards` keeps cards
@@ -94,25 +121,42 @@ export default function IssueList({
           </div>
         ))}
 
-        {hasMore && onLoadMore && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onLoadMore}
-            disabled={loadingMore}
-            className="mt-1 h-9 w-full text-xs"
-          >
-            {loadingMore ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading…
-              </>
-            ) : (
-              "Load more issues"
-            )}
-          </Button>
+          {hasMore && onLoadMore && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+              className="mt-1 h-9 w-full text-xs"
+            >
+              {loadingMore ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading…
+                </>
+              ) : (
+                "Load more issues"
+              )}
+            </Button>
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Edge fades (right inset leaves the scrollbar gutter undimmed) */}
+      <div
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute left-0 right-2.5 top-0 h-8 bg-gradient-to-b from-background to-transparent transition-opacity duration-200",
+          atTop ? "opacity-0" : "opacity-100"
         )}
-      </div>
-    </ScrollArea>
+      />
+      <div
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute bottom-0 left-0 right-2.5 h-8 bg-gradient-to-t from-background to-transparent transition-opacity duration-200",
+          atBottom ? "opacity-0" : "opacity-100"
+        )}
+      />
+    </div>
   );
 }

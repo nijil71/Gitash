@@ -978,9 +978,11 @@ export default function Home() {
             )}
 
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              {/* Left: Issue list */}
-              <div>
-                <div className="mb-3 flex items-center justify-between gap-2">
+              {/* Left: Issue list — sticky full-height on desktop, mirroring
+                  the plan panel, so both columns end at the viewport bottom
+                  instead of guessing the offset with a magic calc(). */}
+              <div className="flex flex-col lg:sticky lg:top-[61px] lg:h-[calc(100vh-80px)]">
+                <div className="mb-3 flex flex-shrink-0 items-center justify-between gap-2">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Open Issues
                   </h2>
@@ -1007,7 +1009,7 @@ export default function Home() {
                     )}
                   </div>
                 </div>
-                <div className="mb-3">
+                <div className="mb-3 flex-shrink-0">
                   <IssueControls
                     search={search}
                     onSearchChange={setSearch}
@@ -1017,7 +1019,15 @@ export default function Home() {
                     searchInputRef={searchInputRef}
                   />
                 </div>
-                <div className={cn("transition-opacity duration-150", loading && "pointer-events-none opacity-40")}>
+                <div
+                  className={cn(
+                    // Mobile keeps a fixed-height list; on desktop the column
+                    // is height-constrained, so the list just fills it.
+                    "h-[calc(100vh-320px)] min-h-[300px] lg:h-auto lg:min-h-0 lg:flex-1",
+                    "transition-opacity duration-150",
+                    loading && "pointer-events-none opacity-40"
+                  )}
+                >
                   <IssueList
                     issues={visibleIssues}
                     selectedIssue={selectedIssue}
