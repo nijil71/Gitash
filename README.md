@@ -28,6 +28,7 @@
 - **Duplicate-work guard** — selecting an issue checks for open PRs that already reference it; if found (or the issue is already closed), plan generation pauses behind a dialog so you can review the existing work before spending tokens (cached plans are free and never paused)
 - **Stale-plan warning** — a cached plan warns when the issue has been updated since it was generated, with one-click regenerate
 - **Convention-aware plans** — if the repo has a CONTRIBUTING file, the AI reads it and bakes CLA, commit-format, and "discuss first" rules into the prerequisites and gotchas; a Guide button links to it from every plan
+- **Follow-up chat** — ask questions about the plan ("explain step 2", "what should the test look like?") right under it; answers stream in with the issue, the plan, and the grounded code as context
 - **Rate-limit heads-up** — when your GitHub request budget runs low, a banner warns you (with reset time) and offers the one-click token setup before things start failing
 - **Streaming, structured plans** — summary, difficulty + effort estimate, prerequisites, relevant files, step-by-step guide, testing notes, and gotchas, streamed in live
 - **Actionable output** — every plan suggests a branch name and one-click Fork / web-editor / Open-PR links; copy or download as Markdown
@@ -59,6 +60,8 @@
                 └── AI streams a structured plan (summary, difficulty,
                     files, steps, testing, gotchas…)
                         └── Parsed and rendered live in the contribution panel
+7. Follow-up questions → POST /api/analyze { mode: "chat" }
+        └── same context + the plan itself, streamed back as plain text
 ```
 
 The route handler at [`app/api/analyze/route.ts`](app/api/analyze/route.ts) dispatches to the selected provider using your key from the request header. Nothing is logged or stored server-side.
@@ -138,6 +141,7 @@ You can switch providers at any time from the header — each provider's key is 
 │   ├── IssueControls.tsx      # Search + sort bar
 │   ├── IssueList.tsx
 │   ├── LabelFilter.tsx
+│   ├── PlanChat.tsx           # Follow-up chat thread + input under the plan
 │   ├── PlanGate.tsx           # Pauses plan generation: linked open PR / closed issue
 │   ├── LoadingSkeleton.tsx
 │   ├── ModelSelector.tsx

@@ -50,12 +50,18 @@ interface AnalyzeRequestBody {
   fileContents?: { path: string; content: string }[];
   /** The repo's CONTRIBUTING file, when one exists (fetched client-side). */
   contributingGuide?: { path: string; content: string } | null;
+  /** mode "chat": the plan the questions are about. */
+  plan?: Partial<ContributionPlan>;
+  /** mode "chat": the conversation so far, ending with the user's question. */
+  chat?: { role: string; content: string }[];
   /** When true, ignore the cached plan and regenerate from scratch. */
   refresh?: boolean;
 }
 
+// issueBody is intentionally absent: issues with an empty description are
+// valid and must not 400.
 const REQUIRED_FIELDS: (keyof AnalyzeRequestBody)[] = [
-  "owner", "repo", "issueNumber", "issueTitle", "issueBody", "labels", "provider",
+  "owner", "repo", "issueNumber", "issueTitle", "labels", "provider",
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -181,25 +187,38 @@ function buildUserPrompt(
 
 // ── Provider streamers ─────────────────────────────────────────────────────
 // Each yields incremental text deltas. The signal lets us abort on timeout —
-// including Gemini, which previously ignored it.
+// including Gemini, which previously ignored it. Takes a message array so the
+// same abstraction serves one-shot prompts (plan, select-files) and multi-turn
+// chat; `json` toggles the providers' structured-output modes, which chat must
+// NOT use (its answers are free-form text).
+interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface StreamOptions {
+  system: string;
+  maxTokens: number;
+  json: boolean;
+}
+
 async function* streamProvider(
   provider: ModelProvider,
   apiKey: string,
   model: string,
-  userPrompt: string,
+  messages: ChatTurn[],
   signal: AbortSignal,
-  system = SYSTEM_PROMPT,
-  maxTokens = MAX_OUTPUT_TOKENS
+  opts: StreamOptions
 ): AsyncGenerator<string> {
   if (provider === "claude") {
     const client = new Anthropic({ apiKey });
     const stream = await client.messages.create(
       {
         model,
-        max_tokens: maxTokens,
+        max_tokens: opts.maxTokens,
         temperature: 0.2,
-        system,
-        messages: [{ role: "user", content: userPrompt }],
+        system: opts.system,
+        messages,
         stream: true,
       },
       { signal }
@@ -214,13 +233,10 @@ async function* streamProvider(
     const stream = await client.chat.completions.create(
       {
         model,
-        max_tokens: maxTokens,
+        max_tokens: opts.maxTokens,
         temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userPrompt },
-        ],
+        ...(opts.json ? { response_format: { type: "json_object" as const } } : {}),
+        messages: [{ role: "system" as const, content: opts.system }, ...messages],
         stream: true,
       },
       { signal }
@@ -233,15 +249,20 @@ async function* streamProvider(
     const genAI = new GoogleGenerativeAI(apiKey);
     const geminiModel = genAI.getGenerativeModel({
       model,
-      systemInstruction: system,
+      systemInstruction: opts.system,
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: maxTokens,
-        responseMimeType: "application/json",
+        maxOutputTokens: opts.maxTokens,
+        ...(opts.json ? { responseMimeType: "application/json" } : {}),
       },
     });
     const result = await geminiModel.generateContentStream(
-      { contents: [{ role: "user", parts: [{ text: userPrompt }] }] },
+      {
+        contents: messages.map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        })),
+      },
       { signal }
     );
     for await (const chunk of result.stream) {
@@ -285,6 +306,157 @@ function buildSelectPrompt(
     `most relevant first]}. Choose ONLY paths that appear in the tree. Prefer the files ` +
     `that would actually be edited, plus at most one file needed purely for context.`
   );
+}
+
+// ── Chat mode ──────────────────────────────────────────────────────────────
+// Follow-up Q&A about a generated plan. The server is stateless, so the full
+// context (issue, plan, grounded code, guidelines) travels in the system
+// prompt on every turn and the message array stays pure conversation.
+
+const CHAT_SYSTEM_PROMPT =
+  "You are a senior open-source contributor mentoring a junior developer through the GitHub issue below. " +
+  "You already produced the contribution plan included in the context. Answer follow-up questions about the plan, " +
+  "the code, and the contribution process. Be concrete and concise: short paragraphs or • bullets, real file paths " +
+  "and symbol names from the context, and small code snippets in `backticks` when they help. If something is not in " +
+  "the context, say what you would check in the repository instead of guessing. Plain text only — no markdown headings.";
+
+const MAX_CHAT_TOKENS = 1024;
+const MAX_CHAT_MESSAGES = 12;
+const MAX_CHAT_CHARS = 4000;
+const MAX_PLAN_CONTEXT_CHARS = 8000;
+
+function planToText(plan: Partial<ContributionPlan>): string {
+  const field = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const parts: string[] = [];
+  if (field(plan.summary)) parts.push(`Summary: ${field(plan.summary)}`);
+  if (field(plan.difficulty) || field(plan.effort)) {
+    parts.push(`Difficulty: ${field(plan.difficulty) || "?"} · Effort: ${field(plan.effort) || "?"}`);
+  }
+  if (field(plan.prerequisites)) parts.push(`Prerequisites:\n${field(plan.prerequisites)}`);
+  if (field(plan.files)) parts.push(`Relevant files:\n${field(plan.files)}`);
+  if (field(plan.plan)) parts.push(`Steps:\n${field(plan.plan)}`);
+  if (field(plan.testing)) parts.push(`Testing:\n${field(plan.testing)}`);
+  if (field(plan.gotchas)) parts.push(`Gotchas:\n${field(plan.gotchas)}`);
+  return parts.join("\n\n");
+}
+
+function buildChatSystem(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  issueTitle: string,
+  issueBody: string,
+  labels: string,
+  comments: { author: string; body: string }[],
+  plan: Partial<ContributionPlan>,
+  fileContents: { path: string; content: string }[],
+  contributingGuide: { path: string; content: string } | null
+): string {
+  const filesSection =
+    fileContents.length > 0
+      ? `Key file contents (may be truncated):\n\n` +
+        fileContents
+          .slice(0, MAX_CONTENT_FILES)
+          .map((f) => `=== ${f.path} ===\n${f.content.slice(0, MAX_CONTENT_CHARS)}`)
+          .join("\n\n") +
+        `\n\n`
+      : "";
+  const guideSection = contributingGuide
+    ? `Project contribution guidelines (${contributingGuide.path}):\n` +
+      contributingGuide.content.slice(0, MAX_GUIDE_CHARS) +
+      `\n\n`
+    : "";
+  return (
+    CHAT_SYSTEM_PROMPT +
+    `\n\n--- Context ---\n` +
+    issueContext(owner, repo, issueNumber, issueTitle, issueBody, labels, comments) +
+    guideSection +
+    filesSection +
+    `The contribution plan you produced:\n${planToText(plan).slice(0, MAX_PLAN_CONTEXT_CHARS)}`
+  );
+}
+
+// ── Shared request plumbing ────────────────────────────────────────────────
+
+function sanitizeFileContents(value: unknown): { path: string; content: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (f): f is { path: string; content: string } =>
+      Boolean(f) && typeof f.path === "string" && typeof f.content === "string" && f.content.length > 0
+  );
+}
+
+function sanitizeGuide(value: unknown): { path: string; content: string } | null {
+  const g = value as { path?: unknown; content?: unknown } | null | undefined;
+  return g && typeof g.path === "string" && typeof g.content === "string" && g.content
+    ? { path: g.path, content: g.content }
+    : null;
+}
+
+// Prime the first chunk (so auth/network failures come back as clean JSON
+// with a real status), then hand the rest of the iterator to a text stream.
+async function primeAndStream(
+  iterator: AsyncGenerator<string>,
+  abort: AbortController,
+  timer: ReturnType<typeof setTimeout>,
+  onComplete?: (full: string) => void
+): Promise<Response> {
+  let firstChunk: IteratorResult<string>;
+  try {
+    firstChunk = await iterator.next();
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof Error && err.name === "AbortError") {
+      return NextResponse.json({ error: "Request timed out. Please try again." }, { status: 504 });
+    }
+    if (isAuthError(err)) {
+      return NextResponse.json({ error: "Invalid API key for selected provider." }, { status: 401 });
+    }
+    const message = err instanceof Error ? err.message : "Provider API error";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let full = "";
+      try {
+        if (!firstChunk.done && firstChunk.value) {
+          full += firstChunk.value;
+          controller.enqueue(encoder.encode(firstChunk.value));
+        }
+        while (true) {
+          const { value, done } = await iterator.next();
+          if (done) break;
+          if (value) {
+            full += value;
+            controller.enqueue(encoder.encode(value));
+          }
+        }
+        onComplete?.(full);
+      } catch (err) {
+        // Stream already open; we can't change the status. End it and let the
+        // client salvage whatever arrived.
+        console.error("[/api/analyze] stream error:", err);
+      } finally {
+        clearTimeout(timer);
+        controller.close();
+      }
+    },
+    cancel() {
+      abort.abort();
+      clearTimeout(timer);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      "X-Accel-Buffering": "no",
+      "X-Stream": "1",
+    },
+  });
 }
 
 // Salvage a path list from imperfect model output (fences, prose, bare array).
@@ -338,8 +510,11 @@ async function handlePost(req: Request): Promise<Response> {
     );
   }
 
-  const { owner, repo, issueNumber, issueTitle, issueBody, labels, provider, fileTree, comments, mode, fileContents, contributingGuide, refresh } =
+  const { owner, repo, issueNumber, issueTitle, labels, provider, fileTree, comments, mode, fileContents, contributingGuide, plan, chat, refresh } =
     body as AnalyzeRequestBody;
+  // Empty issue descriptions are valid — never let them 400 or crash a slice.
+  const issueBody = typeof body.issueBody === "string" ? body.issueBody : "";
+  const safeComments = Array.isArray(comments) ? comments : [];
 
   let modelOption;
   try {
@@ -363,15 +538,17 @@ async function handlePost(req: Request): Promise<Response> {
 
     const selectPrompt = buildSelectPrompt(
       owner, repo, issueNumber, issueTitle, issueBody, labels,
-      tree, Array.isArray(comments) ? comments : []
+      tree, safeComments
     );
     const selectController = new AbortController();
     const selectTimer = setTimeout(() => selectController.abort(), TIMEOUT_MS);
     try {
       let raw = "";
       for await (const chunk of streamProvider(
-        provider, xApiKey, modelOption.model, selectPrompt,
-        selectController.signal, SELECT_SYSTEM_PROMPT, MAX_SELECT_TOKENS
+        provider, xApiKey, modelOption.model,
+        [{ role: "user", content: selectPrompt }],
+        selectController.signal,
+        { system: SELECT_SYSTEM_PROMPT, maxTokens: MAX_SELECT_TOKENS, json: true }
       )) {
         raw += chunk;
       }
@@ -392,6 +569,49 @@ async function handlePost(req: Request): Promise<Response> {
     }
   }
 
+  // Chat: follow-up Q&A about a generated plan. Streams free-form text;
+  // never cached (conversational, no reuse value).
+  if (mode === "chat") {
+    const turns: ChatTurn[] = (Array.isArray(chat) ? chat : [])
+      .filter(
+        (m): m is { role: "user" | "assistant"; content: string } =>
+          Boolean(m) &&
+          (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" &&
+          m.content.trim().length > 0
+      )
+      .slice(-MAX_CHAT_MESSAGES)
+      .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_CHAT_CHARS) }));
+    // Claude requires the conversation to open with a user turn; trimming the
+    // history window can strand an assistant turn at the front.
+    while (turns.length > 0 && turns[0].role !== "user") turns.shift();
+    if (turns.length === 0 || turns[turns.length - 1].role !== "user") {
+      return NextResponse.json(
+        { error: "Chat must end with a user question." },
+        { status: 400 }
+      );
+    }
+
+    const chatSystem = buildChatSystem(
+      owner, repo, issueNumber, issueTitle, issueBody, labels,
+      safeComments,
+      plan && typeof plan === "object" ? plan : {},
+      sanitizeFileContents(fileContents),
+      sanitizeGuide(contributingGuide)
+    );
+    const chatController = new AbortController();
+    const chatTimer = setTimeout(() => chatController.abort(), TIMEOUT_MS);
+    return primeAndStream(
+      streamProvider(provider, xApiKey, modelOption.model, turns, chatController.signal, {
+        system: chatSystem,
+        maxTokens: MAX_CHAT_TOKENS,
+        json: false,
+      }),
+      chatController,
+      chatTimer
+    );
+  }
+
   // Cache hit — skip the AI call entirely (unless the client asked to refresh).
   if (!refresh) {
     const cached = responseCache.get(cacheKey);
@@ -410,84 +630,28 @@ async function handlePost(req: Request): Promise<Response> {
     issueBody,
     labels,
     Array.isArray(fileTree) ? fileTree : [],
-    Array.isArray(comments) ? comments : [],
-    Array.isArray(fileContents)
-      ? fileContents.filter(
-          (f) => f && typeof f.path === "string" && typeof f.content === "string" && f.content
-        )
-      : [],
-    contributingGuide &&
-      typeof contributingGuide.path === "string" &&
-      typeof contributingGuide.content === "string" &&
-      contributingGuide.content
-      ? contributingGuide
-      : null
+    safeComments,
+    sanitizeFileContents(fileContents),
+    sanitizeGuide(contributingGuide)
   );
 
-  // Abort the provider call if it runs past the timeout.
+  // Abort the provider call if it runs past the timeout. The client parses
+  // the streamed text progressively; we also accumulate it server-side so the
+  // finished plan can be cached.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  // Prime the first chunk so initial errors (bad key, network) come back as a
-  // clean JSON error before we commit to a streaming response.
-  const iterator = streamProvider(provider, xApiKey, modelOption.model, userPrompt, controller.signal);
-  let firstChunk: IteratorResult<string>;
-  try {
-    firstChunk = await iterator.next();
-  } catch (err) {
-    clearTimeout(timer);
-    if (err instanceof Error && err.name === "AbortError") {
-      return NextResponse.json({ error: "Request timed out. Please try again." }, { status: 504 });
+  return primeAndStream(
+    streamProvider(
+      provider, xApiKey, modelOption.model,
+      [{ role: "user", content: userPrompt }],
+      controller.signal,
+      { system: SYSTEM_PROMPT, maxTokens: MAX_OUTPUT_TOKENS, json: true }
+    ),
+    controller,
+    timer,
+    (full) => {
+      const parsed = parsePlan(full);
+      if (!isEmptyPlan(parsed)) cacheSet(cacheKey, parsed);
     }
-    if (isAuthError(err)) {
-      return NextResponse.json({ error: "Invalid API key for selected provider." }, { status: 401 });
-    }
-    const message = err instanceof Error ? err.message : "Provider API error";
-    return NextResponse.json({ error: message }, { status: 502 });
-  }
-
-  // Stream raw model text to the client, which parses it progressively. We also
-  // accumulate the full text here so we can cache the parsed plan at the end.
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller2) {
-      let full = "";
-      try {
-        if (!firstChunk.done && firstChunk.value) {
-          full += firstChunk.value;
-          controller2.enqueue(encoder.encode(firstChunk.value));
-        }
-        while (true) {
-          const { value, done } = await iterator.next();
-          if (done) break;
-          if (value) {
-            full += value;
-            controller2.enqueue(encoder.encode(value));
-          }
-        }
-        const parsed = parsePlan(full);
-        if (!isEmptyPlan(parsed)) cacheSet(cacheKey, parsed);
-      } catch (err) {
-        // Stream already open; we can't change the status. End it and let the
-        // client salvage whatever arrived.
-        console.error("[/api/analyze] stream error:", err);
-      } finally {
-        clearTimeout(timer);
-        controller2.close();
-      }
-    },
-    cancel() {
-      controller.abort();
-      clearTimeout(timer);
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store, no-transform",
-      "X-Accel-Buffering": "no",
-      "X-Stream": "1",
-    },
-  });
+  );
 }

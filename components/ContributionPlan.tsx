@@ -31,6 +31,7 @@ import { fetchFileContent, fetchIssueComments } from "@/lib/github";
 import { parsePlan } from "@/lib/planParse";
 import { getCachedPlan, savePlan, planKey } from "@/lib/planHistory";
 import AIThinking, { SectionChips, type PlanSectionStatus } from "./AIThinking";
+import { ChatThread, ChatInput, type ChatMessage } from "./PlanChat";
 import CopyButton from "./CopyButton";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -338,6 +339,39 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   // Lets the Stop button abort the in-flight request/stream.
   const abortRef = useRef<AbortController | null>(null);
 
+  // ── Follow-up chat ─────────────────────────────────────────────────────
+  // The panel remounts per issue+provider (keyed in page.tsx), so chat state
+  // resets exactly when the conversation's subject changes. The grounding
+  // fetched for plan generation is kept so every answer sees the same code.
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatStreaming, setChatStreaming] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  const commentsRef = useRef<{ author: string; body: string }[]>([]);
+  const groundingRef = useRef<{
+    fileContents: { path: string; content: string }[];
+    contributingGuide: { path: string; content: string } | null;
+  }>({ fileContents: [], contributingGuide: null });
+
+  // Auto-scroll anchor: the Radix viewport inside this wrapper.
+  const scrollWrapRef = useRef<HTMLDivElement>(null);
+  const scrollPlanToBottom = (force = false) => {
+    const viewport = scrollWrapRef.current?.querySelector<HTMLElement>(
+      "[data-radix-scroll-area-viewport]"
+    );
+    if (!viewport) return;
+    const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 200;
+    if (force || nearBottom) viewport.scrollTop = viewport.scrollHeight;
+  };
+  // Follow the streaming answer only while the user is already near the
+  // bottom — never hijack someone scrolled up reading the plan.
+  useEffect(() => {
+    if (chatMessages.length > 0) scrollPlanToBottom();
+  }, [chatMessages]);
+  // Abort an in-flight answer when the panel unmounts.
+  useEffect(() => () => chatAbortRef.current?.abort(), []);
+
   useEffect(() => {
     let cancelled = false;
     // Consume the one-shot refresh flag set by the regenerate button.
@@ -354,6 +388,13 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     setGrounding(false);
     setGroundedFiles(0);
     setActiveTab("files");
+    // A new or regenerated plan invalidates the old conversation.
+    chatAbortRef.current?.abort();
+    setChatMessages([]);
+    setChatError(null);
+    setChatStreaming(false);
+    commentsRef.current = [];
+    groundingRef.current = { fileContents: [], contributingGuide: null };
 
     // Local cache: a previously finished plan renders instantly, works
     // offline, and costs zero provider tokens. Regenerate bypasses it.
@@ -392,6 +433,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
           comments = [];
         }
       }
+      commentsRef.current = comments;
       if (cancelled) return;
 
       const requestBase = {
@@ -453,6 +495,7 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
       const contributingGuide = await guidePromise;
       if (cancelled) return;
       setGroundedFiles(fileContents.length);
+      groundingRef.current = { fileContents, contributingGuide };
 
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -535,6 +578,76 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     if (loading || streaming) return;
     refreshRef.current = true;
     setReloadToken((t) => t + 1);
+  };
+
+  const handleChatSend = async () => {
+    const question = chatInput.trim();
+    if (!question || chatStreaming || !plan) return;
+    // History sent to the API: completed turns plus the new question. The
+    // empty assistant turn is a local placeholder the stream fills in.
+    const history: ChatMessage[] = [...chatMessages, { role: "user", content: question }];
+    setChatMessages([...history, { role: "assistant", content: "" }]);
+    setChatInput("");
+    setChatError(null);
+    setChatStreaming(true);
+    requestAnimationFrame(() => scrollPlanToBottom(true));
+
+    const controller = new AbortController();
+    chatAbortRef.current = controller;
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+        body: JSON.stringify({
+          owner, repo,
+          issueNumber: issue.number,
+          issueTitle: issue.title,
+          issueBody: issue.body ?? "",
+          labels: issue.labels.map((l) => l.name).join(", ") || "none",
+          provider: selectedModel.id,
+          mode: "chat",
+          plan,
+          chat: history,
+          comments: commentsRef.current,
+          fileContents: groundingRef.current.fileContents,
+          contributingGuide: groundingRef.current.contributingGuide,
+        }),
+      });
+      if (!res.ok || !res.body || (res.headers.get("content-type") ?? "").includes("application/json")) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? `Error ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        acc += decoder.decode(value, { stream: true });
+        setChatMessages([...history, { role: "assistant", content: acc }]);
+      }
+      if (!acc.trim()) setChatMessages(history); // empty answer — drop the placeholder
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // Stopped: keep whatever streamed in; drop a still-empty placeholder.
+        setChatMessages((msgs) =>
+          msgs.length && msgs[msgs.length - 1].role === "assistant" && !msgs[msgs.length - 1].content
+            ? msgs.slice(0, -1)
+            : msgs
+        );
+      } else {
+        setChatMessages(history.slice(0, -1)); // restore pre-question state
+        setChatInput(question); // let the user retry without retyping
+        setChatError(err instanceof Error ? err.message : "Something went wrong");
+      }
+    } finally {
+      setChatStreaming(false);
+    }
+  };
+
+  const handleChatStop = () => {
+    chatAbortRef.current?.abort();
   };
 
   const handleStop = () => {
@@ -749,8 +862,9 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
       )}
 
       {/* ── Tab content ── */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="p-5">
+      <div ref={scrollWrapRef} className="flex-1 min-h-0">
+        <ScrollArea className="h-full">
+          <div className="p-5">
           {loading && (
             <AIThinking
               modelName={selectedModel.name}
@@ -838,8 +952,26 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
               {activeTab === "gotchas" && <BulletList items={gotchas} accent="hsl(var(--foreground))" />}
             </div>
           )}
-        </div>
-      </ScrollArea>
+
+          {/* Follow-up conversation, below whichever tab is active */}
+          {plan && !loading && (
+            <ChatThread messages={chatMessages} streaming={chatStreaming} className="mt-6" />
+          )}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* ── Follow-up input ── */}
+      {plan && !loading && !streaming && (
+        <ChatInput
+          value={chatInput}
+          onChange={setChatInput}
+          onSend={handleChatSend}
+          onStop={handleChatStop}
+          streaming={chatStreaming}
+          error={chatError}
+        />
+      )}
 
       {/* ── Action footer ── */}
       {plan && !loading && (
