@@ -24,7 +24,8 @@
 - **Browse any public GitHub repo** — paste a full URL or `owner/repo` shorthand
 - **Filter, search & sort** — combine multiple labels, search loaded issues, sort by newest / recently updated / most commented, and page through results
 - **Pick your AI** — choose between Claude (Anthropic), GPT (OpenAI), or Gemini (Google)
-- **Context-grounded plans** — the AI sees the repo's real file tree and the issue discussion, so file suggestions point at files that actually exist
+- **Code-grounded plans** — a quick AI pass picks the most relevant files, their real contents are fetched from GitHub, and the plan is written against actual code (real function and component names, not guesses from file names)
+- **Duplicate-work guard** — selecting an issue checks for open PRs that already reference it; if found, plan generation pauses behind a dialog so you can review the existing work before spending tokens (cached plans are free and never paused)
 - **Streaming, structured plans** — summary, difficulty + effort estimate, prerequisites, relevant files, step-by-step guide, testing notes, and gotchas, streamed in live
 - **Actionable output** — every plan suggests a branch name and one-click Fork / web-editor / Open-PR links; copy or download as Markdown
 - **Stay organized** — bookmark issues, revisit recent repos, and navigate the list by keyboard (`/` to search, ↑/↓ to move)
@@ -39,11 +40,17 @@
 1. User picks an AI provider and saves their API key (stored in localStorage)
 2. Paste a GitHub repo URL → fetches repo meta + labels via GitHub REST API
 3. Select label filter(s) → fetches matching open issues (search/sort/paginate client-side + via the API)
-4. Click an issue → POST /api/analyze
+4. Click an issue → checks GitHub for open PRs already referencing it
+        └── if found, generation pauses: review the PR, or "Generate plan anyway"
+5. Stage 1 — POST /api/analyze { mode: "select-files" }
+        └── AI picks the ≤5 most relevant paths from the file tree
+                └── their real contents are fetched from GitHub (client-side)
+6. Stage 2 — POST /api/analyze
         ├── x-api-key header  (your key, direct to provider)
         ├── provider: "claude" | "openai" | "gemini"
         ├── issue context (title, body, labels, repo)
         ├── fileTree (filtered list of the repo's real source paths)
+        ├── fileContents (the stage-1 picks, truncated)
         └── comments (the issue discussion, fetched from GitHub)
                 └── AI streams a structured plan (summary, difficulty,
                     files, steps, testing, gotchas…)
@@ -127,6 +134,7 @@ You can switch providers at any time from the header — each provider's key is 
 │   ├── IssueControls.tsx      # Search + sort bar
 │   ├── IssueList.tsx
 │   ├── LabelFilter.tsx
+│   ├── LinkedPRNotice.tsx     # Warns when an open PR already covers the issue
 │   ├── LoadingSkeleton.tsx
 │   ├── ModelSelector.tsx
 │   ├── RepoInput.tsx

@@ -24,6 +24,7 @@ import LabelFilter from "@/components/LabelFilter";
 import IssueList from "@/components/IssueList";
 import IssueControls, { SORT_OPTIONS } from "@/components/IssueControls";
 import ContributionPlanPanel from "@/components/ContributionPlan";
+import LinkedPRNotice, { LinkedPRDialog, LinkedPRGateCard } from "@/components/LinkedPRNotice";
 import CommandPalette from "@/components/CommandPalette";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -36,10 +37,12 @@ import {
   GitHubAPIError,
   ISSUES_PER_PAGE,
   type RepoTree,
+  type LinkedPR,
 } from "@/lib/github";
+import { getLinkedPRs } from "@/lib/linkedPRs";
 import { MODEL_OPTIONS, getModel } from "@/lib/models";
 import { parseRepo } from "@/lib/parseRepo";
-import { getPlanHistory, type SavedPlan } from "@/lib/planHistory";
+import { getPlanHistory, getCachedPlan, planKey, type SavedPlan } from "@/lib/planHistory";
 import { getRecentRepos, addRecentRepo, type RecentRepo } from "@/lib/recentRepos";
 import {
   getBookmarks,
@@ -297,6 +300,51 @@ export default function Home() {
   // Issue number to auto-select once a repo's issues load (deep links and
   // the past-plans panel both use this).
   const pendingIssueRef = useRef<number | null>(null);
+
+  // ── Linked-PR gate ───────────────────────────────────────────────────────
+  // Before generating a plan, check whether an open PR already references the
+  // selected issue. If so, pause generation and ask — reviewing existing work
+  // is free; a plan costs tokens. Fail open: a failed check never blocks.
+  const [openPRs, setOpenPRs] = useState<LinkedPR[]>([]);
+  const [prCheckPending, setPrCheckPending] = useState(false);
+  const [planAnyway, setPlanAnyway] = useState(false);
+  const [showPRDialog, setShowPRDialog] = useState(false);
+
+  useEffect(() => {
+    setOpenPRs([]);
+    setPlanAnyway(false);
+    setShowPRDialog(false);
+    if (!selectedIssue || !repoMeta) {
+      setPrCheckPending(false);
+      return;
+    }
+    let cancelled = false;
+    setPrCheckPending(true);
+    void getLinkedPRs(
+      repoMeta.owner,
+      repoMeta.repo,
+      selectedIssue.number,
+      githubToken || undefined
+    ).then((prs) => {
+      if (cancelled) return;
+      const open = prs.filter((pr) => pr.state === "open");
+      setOpenPRs(open);
+      setPrCheckPending(false);
+      // Only interrupt when a plan would actually be generated: a key is set
+      // and there's no cached plan to serve for free.
+      if (
+        open.length > 0 &&
+        apiKey &&
+        !getCachedPlan(planKey(repoMeta.owner, repoMeta.repo, selectedIssue.number, selectedModel.id))
+      ) {
+        setShowPRDialog(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIssue, repoMeta]);
 
   const handleToggleBookmark = (issue: GitHubIssue) => {
     if (!repoMeta) return;
@@ -688,6 +736,18 @@ export default function Home() {
     ? searched.filter((i) => bookmarkedNumbers.has(i.number))
     : searched;
 
+  // Plan gating: hold generation while the linked-PR check runs, and pause it
+  // when open PRs exist. A cached plan costs nothing, so it's never gated.
+  const cachedPlanExists =
+    selectedIssue && repoMeta
+      ? Boolean(
+          getCachedPlan(planKey(repoMeta.owner, repoMeta.repo, selectedIssue.number, selectedModel.id))
+        )
+      : false;
+  const planHolding = Boolean(apiKey) && prCheckPending && !cachedPlanExists;
+  const planGated =
+    Boolean(apiKey) && openPRs.length > 0 && !planAnyway && !cachedPlanExists;
+
   // Keep the keyboard-nav refs in sync with the latest render.
   visibleIssuesRef.current = visibleIssues;
   selectedIssueRef.current = selectedIssue;
@@ -881,7 +941,32 @@ export default function Home() {
                   </h2>
                 </div>
 
-                {selectedIssue && apiKey ? (
+                {/* The banner stays visible once the gate is passed (or when
+                    no plan will be generated); while gated, the gate card
+                    itself carries the PR details. */}
+                {selectedIssue && !planGated && !planHolding && (
+                  <LinkedPRNotice
+                    openPRs={openPRs}
+                    owner={repoMeta.owner}
+                    repo={repoMeta.repo}
+                  />
+                )}
+
+                {selectedIssue && apiKey && planHolding ? (
+                  <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-10 text-center">
+                    <GitBranch className="h-5 w-5 animate-pulse text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">
+                      Checking for PRs already linked to this issue…
+                    </p>
+                  </div>
+                ) : selectedIssue && apiKey && planGated ? (
+                  <LinkedPRGateCard
+                    openPRs={openPRs}
+                    owner={repoMeta.owner}
+                    repo={repoMeta.repo}
+                    onGenerate={() => setPlanAnyway(true)}
+                  />
+                ) : selectedIssue && apiKey ? (
                   <ContributionPlanPanel
                     className="flex-1 min-h-0 h-[80vh] lg:h-auto"
                     key={`${repoMeta.owner}/${repoMeta.repo}#${selectedIssue.number}@${selectedModel.id}`}
@@ -1058,6 +1143,20 @@ export default function Home() {
         onClose={() => setShowTokenModal(false)}
         onSave={setGithubToken}
       />
+
+      {repoMeta && selectedIssue && (
+        <LinkedPRDialog
+          open={showPRDialog}
+          onOpenChange={setShowPRDialog}
+          openPRs={openPRs}
+          owner={repoMeta.owner}
+          repo={repoMeta.repo}
+          onGenerate={() => {
+            setPlanAnyway(true);
+            setShowPRDialog(false);
+          }}
+        />
+      )}
 
       {palette}
     </div>

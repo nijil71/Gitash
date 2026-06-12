@@ -27,7 +27,7 @@ import type {
   ModelOption,
   PlanDifficulty,
 } from "@/types";
-import { fetchIssueComments } from "@/lib/github";
+import { fetchFileContent, fetchIssueComments } from "@/lib/github";
 import { parsePlan } from "@/lib/planParse";
 import { getCachedPlan, savePlan, planKey } from "@/lib/planHistory";
 import AIThinking, { SectionChips, type PlanSectionStatus } from "./AIThinking";
@@ -319,6 +319,10 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
   const [error, setError] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
   const [fromCache, setFromCache] = useState(false);
+  // Stage-1 state: true while selecting + reading source files; the count of
+  // files whose real contents grounded the current plan.
+  const [grounding, setGrounding] = useState(false);
+  const [groundedFiles, setGroundedFiles] = useState(0);
   const [activeTab, setActiveTab] = useState<TabKey>("files");
   const [reloadToken, setReloadToken] = useState(0);
   // Marks the next effect run as a manual regenerate (bypasses the cache).
@@ -338,6 +342,8 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
     setError(null);
     setStopped(false);
     setFromCache(false);
+    setGrounding(false);
+    setGroundedFiles(0);
     setActiveTab("files");
 
     // Local cache: a previously finished plan renders instantly, works
@@ -377,21 +383,60 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
       }
       if (cancelled) return;
 
+      const requestBase = {
+        owner, repo,
+        issueNumber: issue.number,
+        issueTitle: issue.title,
+        issueBody: issue.body ?? "",
+        labels: labelNames,
+        provider: selectedModel.id,
+        fileTree,
+        comments,
+      };
+
+      // Stage 1 (best-effort): ask the model which files matter, then pull
+      // their real contents from GitHub — client-side, like every other repo
+      // call — so the plan cites actual code. Any failure here falls back to
+      // the tree-only prompt; an abort resurfaces on the plan request below.
+      let fileContents: { path: string; content: string }[] = [];
+      if (fileTree.length > 0) {
+        setGrounding(true);
+        try {
+          const selRes = await fetch("/api/analyze", {
+            method: "POST",
+            signal: controller.signal,
+            headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+            body: JSON.stringify({ ...requestBase, mode: "select-files" }),
+          });
+          if (selRes.ok) {
+            const { files: picked } = (await selRes.json()) as { files?: string[] };
+            if (Array.isArray(picked) && picked.length > 0) {
+              const fetched = await Promise.all(
+                picked.map((path) =>
+                  fetchFileContent(owner, repo, path, defaultBranch, githubToken || undefined)
+                    .then((content) => ({ path, content }))
+                    .catch(() => null)
+                )
+              );
+              fileContents = fetched.filter(
+                (f): f is { path: string; content: string } => Boolean(f?.content)
+              );
+            }
+          }
+        } catch {
+          /* tree-only fallback */
+        } finally {
+          setGrounding(false);
+        }
+      }
+      if (cancelled) return;
+      setGroundedFiles(fileContents.length);
+
       const res = await fetch("/api/analyze", {
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-        body: JSON.stringify({
-          owner, repo,
-          issueNumber: issue.number,
-          issueTitle: issue.title,
-          issueBody: issue.body ?? "",
-          labels: labelNames,
-          provider: selectedModel.id,
-          fileTree,
-          comments,
-          refresh,
-        }),
+        body: JSON.stringify({ ...requestBase, fileContents, refresh }),
       });
 
       const ct = res.headers.get("content-type") ?? "";
@@ -562,6 +607,15 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
                 Saved
               </span>
             )}
+            {groundedFiles > 0 && !fromCache && (
+              <span
+                className="inline-flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-secondary/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                title={`The AI read the real contents of ${groundedFiles} source file${groundedFiles === 1 ? "" : "s"} before writing this plan`}
+              >
+                <FileCode2 className="h-3 w-3" />
+                {groundedFiles} file{groundedFiles === 1 ? "" : "s"} read
+              </span>
+            )}
           </div>
           <p className="truncate text-xs text-muted-foreground font-mono">
             #{issue.number} · {issue.title}
@@ -671,7 +725,13 @@ export default function ContributionPlan({ issue, apiKey, owner, repo, fileTree,
       {/* ── Tab content ── */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-5">
-          {loading && <AIThinking modelName={selectedModel.name} sections={sectionStatus} />}
+          {loading && (
+            <AIThinking
+              modelName={selectedModel.name}
+              sections={sectionStatus}
+              statusMessage={grounding ? "Selecting and reading key source files…" : undefined}
+            />
+          )}
 
           {error && (
             <Alert variant="destructive" className="animate-fade-in">

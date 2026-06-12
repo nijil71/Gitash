@@ -135,6 +135,93 @@ export async function fetchIssueComments(
     .filter((c) => c.body);
 }
 
+export interface LinkedPR {
+  number: number;
+  title: string;
+  html_url: string;
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  /** "owner/repo" the PR lives in — cross-references can come from forks. */
+  repo: string;
+}
+
+export async function fetchLinkedPRs(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  githubToken?: string
+): Promise<LinkedPR[]> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/timeline?per_page=100`,
+    { headers: buildHeaders(githubToken) }
+  );
+  assertOk(res, `fetchLinkedPRs(${owner}/${repo}#${issueNumber})`);
+
+  const events: Array<{
+    event: string;
+    source?: {
+      issue?: {
+        number: number;
+        title: string;
+        html_url: string;
+        state: string;
+        draft?: boolean;
+        pull_request?: { merged_at: string | null };
+        repository?: { full_name: string };
+      };
+    };
+  }> = await res.json();
+
+  const seen = new Set<string>();
+  const prs: LinkedPR[] = [];
+  for (const ev of events) {
+    if (ev.event !== "cross-referenced") continue;
+    const item = ev.source?.issue;
+    if (!item?.pull_request) continue;
+    const prRepo = item.repository?.full_name ?? `${owner}/${repo}`;
+    const key = `${prRepo}#${item.number}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    prs.push({
+      number: item.number,
+      title: item.title,
+      html_url: item.html_url,
+      state: item.pull_request.merged_at
+        ? "merged"
+        : item.state === "open"
+          ? "open"
+          : "closed",
+      draft: Boolean(item.draft),
+      repo: prRepo,
+    });
+  }
+  return prs;
+}
+
+export async function fetchFileContent(
+  owner: string,
+  repo: string,
+  path: string,
+  ref: string,
+  githubToken?: string,
+  maxChars = 10_000
+): Promise<string> {
+  const headers = buildHeaders(githubToken);
+  headers.Accept = "application/vnd.github.raw+json";
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${path
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/")}?ref=${encodeURIComponent(ref)}`,
+    { headers }
+  );
+  assertOk(res, `fetchFileContent(${owner}/${repo}:${path})`);
+  const text = await res.text();
+  return text.length > maxChars
+    ? `${text.slice(0, maxChars)}\n… (truncated)`
+    : text;
+}
+
 export async function fetchRepoMeta(
   owner: string,
   repo: string,

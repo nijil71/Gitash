@@ -16,6 +16,8 @@ interface Props {
   modelName: string;
   /** Live per-section progress; chips light up as sections stream in. */
   sections: PlanSectionStatus[];
+  /** When set, replaces the cycling status messages (e.g. while reading code). */
+  statusMessage?: string;
   className?: string;
 }
 
@@ -86,7 +88,7 @@ export function SectionChips({
  * live section-progress chips, and shimmering ghost lines where the plan
  * content will appear.
  */
-export default function AIThinking({ modelName, sections, className }: Props) {
+export default function AIThinking({ modelName, sections, statusMessage, className }: Props) {
   const [msgIndex, setMsgIndex] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
@@ -131,8 +133,11 @@ export default function AIThinking({ modelName, sections, className }: Props) {
 
       {/* ── Cycling status line ── */}
       <div className="flex flex-col items-center gap-1.5 text-center" aria-live="polite">
-        <p key={msgIndex} className="animate-fade-in text-sm font-medium text-foreground">
-          {MESSAGES[msgIndex]}
+        <p
+          key={statusMessage ?? msgIndex}
+          className="animate-fade-in text-sm font-medium text-foreground"
+        >
+          {statusMessage ?? MESSAGES[msgIndex]}
         </p>
         <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <span>{modelName} is writing your plan</span>
